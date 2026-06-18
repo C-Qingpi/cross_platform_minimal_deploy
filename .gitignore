@@ -1,0 +1,13 @@
+.env
+agent_config.toml
+.run/
+*.pid
+.arion/
+workspaces/
+agents.json
+frontend/node_modules/
+frontend/dist/
+*.log
+*.err
+agent.log*
+frontend.log*
