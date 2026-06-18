@@ -31,7 +31,7 @@ from config import apply_provider_env, get_model, load_config, register_proxies
 
 import agent_events as events
 from arion_agent.util.streaming import LlmStreamUpdate
-from prompts import DEFAULT_DEEPMEMORY, DEFAULT_SOUL, wrap_user_message
+from prompts import DEFAULT_DEEPMEMORY, DEFAULT_SOUL, WORKFLOW_METHODOLOGY, wrap_user_message
 
 DEPLOY_ROOT = Path(os.environ.get("DEPLOY_ROOT", str(DEPLOY_DIR)))
 setup_service_logging("agent", DEPLOY_ROOT)
@@ -172,6 +172,7 @@ def create_agent_instance(agent_id: str, model_spec: str) -> object:
         agent_id=agent_id,
         soul=DEFAULT_SOUL,
         deep_memory=DEFAULT_DEEPMEMORY,
+        pinned_instructions=WORKFLOW_METHODOLOGY,
         subagents=None,
         summarization=summarization,
         planning=False,
