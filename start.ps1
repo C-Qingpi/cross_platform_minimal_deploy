@@ -10,7 +10,7 @@ if (-not (Test-Path ".env")) {
 
 $env:DEPLOY_ROOT = if ($env:DEPLOY_ROOT) { $env:DEPLOY_ROOT } else { $Root }
 
-$BackendPort = if ($env:BACKEND_PORT) { $env:BACKEND_PORT } else { "8920" }
+$BackendPort = if ($env:BACKEND_PORT) { $env:BACKEND_PORT } else { "8921" }
 
 Write-Host "Starting backend on port $BackendPort..."
 Start-Process -NoNewWindow -FilePath "python" -ArgumentList "-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", $BackendPort -WorkingDirectory "$Root\backend"
@@ -22,7 +22,7 @@ Start-Process -NoNewWindow -FilePath "python" -ArgumentList "agent_runner.py" -W
 
 Start-Sleep -Seconds 1
 
-Write-Host "Starting frontend on http://localhost:5174 ..."
+Write-Host "Starting frontend on http://localhost:5175 ..."
 Set-Location "$Root\frontend"
 if (-not (Test-Path "node_modules")) { npm install }
 npm run dev

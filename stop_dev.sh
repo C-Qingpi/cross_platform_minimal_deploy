@@ -1,10 +1,10 @@
 #!/bin/bash
-# Stop only this deploy's backend, agent runner, and frontend (by saved PIDs).
+# Stop DEVELOPMENT deployment (ports 8920 / 5174)
 set -eu
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 RUN_DIR="$ROOT/.run"
-BACKEND_PORT=8921
-FRONTEND_PORT=5175
+BACKEND_PORT=8920
+FRONTEND_PORT=5174
 export BACKEND_PORT FRONTEND_PORT
 
 stop_pid() {
@@ -69,7 +69,7 @@ stop_port_if_ours() {
     cwd="$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1 || true)"
     cmd="$(ps -p "$pid" -o command= 2>/dev/null || true)"
     if [[ "$cwd" == "$ROOT"* ]] || [[ "$cmd" == *"$ROOT"* ]]; then
-      echo "Stopping $label on port $port (pid $pid) ..."
+      echo "Stopping DEVELOPMENT $label on port $port (pid $pid) ..."
       kill "$pid" 2>/dev/null || true
     fi
   done

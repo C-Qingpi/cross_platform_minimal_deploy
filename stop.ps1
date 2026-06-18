@@ -2,8 +2,8 @@
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RunDir = Join-Path $Root ".run"
-$BackendPort = if ($env:BACKEND_PORT) { [int]$env:BACKEND_PORT } else { 8920 }
-$FrontendPort = if ($env:FRONTEND_PORT) { [int]$env:FRONTEND_PORT } else { 5174 }
+$BackendPort = if ($env:BACKEND_PORT) { [int]$env:BACKEND_PORT } else { 8921 }
+$FrontendPort = if ($env:FRONTEND_PORT) { [int]$env:FRONTEND_PORT } else { 5175 }
 
 function Stop-SavedPid {
     param([string]$Name, [string]$PidFile)
@@ -40,7 +40,7 @@ function Stop-PortIfOurs {
         $proc = Get-CimInstance Win32_Process -Filter "ProcessId=$procId" -ErrorAction SilentlyContinue
         if (-not $proc) { continue }
         $cmd = $proc.CommandLine
-        if ($cmd -and ($cmd -like "*$Root*" -or $cmd -like "*cross_platform_minimal_deploy*")) {
+        if ($cmd -and ($cmd -like "*$Root*")) {
             Write-Host "Stopping $Label on port $Port (pid $procId) ..."
             Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
         }
