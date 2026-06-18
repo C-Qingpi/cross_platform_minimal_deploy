@@ -3,6 +3,7 @@ import type { Message, StreamDraft } from "../types/api";
 import type { ConversationRound } from "../lib/groupRounds";
 import { messageDedupeKey, messageStableKey, roundStableKey } from "../lib/groupRounds";
 import { modelLabel } from "../lib/modelLabel";
+import { stripUserMessageWrapper } from "../lib/stripWrapper";
 import { usePinScrollBottom } from "../hooks/usePinScrollBottom";
 import { StreamingTypewriterText } from "./StreamingTypewriterText";
 import { TypewriterText } from "./TypewriterText";
@@ -339,7 +340,7 @@ export const ConversationRoundView = memo(function ConversationRoundView({
         <div className="flex justify-end my-3">
           <div className="max-w-[80%] rounded-2xl rounded-br-md bg-indigo-600 px-3.5 py-2 text-sm text-white whitespace-pre-wrap">
             {typeof round.human.content === "string"
-              ? round.human.content
+              ? stripUserMessageWrapper(round.human.content)
               : JSON.stringify(round.human.content)}
           </div>
         </div>
@@ -374,7 +375,9 @@ export function SummaryBanner({ summary }: { summary: string }) {
 
 export const LogEntry = memo(function LogEntry({ msg }: { msg: Message }) {
   if (msg.type === "human") {
-    const text = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content);
+    const text = typeof msg.content === "string"
+      ? stripUserMessageWrapper(msg.content)
+      : JSON.stringify(msg.content);
     return (
       <div className="flex justify-end my-3">
         <div className="max-w-[80%] rounded-2xl rounded-br-md bg-indigo-600 px-3.5 py-2 text-sm text-white whitespace-pre-wrap">

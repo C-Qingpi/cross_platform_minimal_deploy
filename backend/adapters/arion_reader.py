@@ -207,6 +207,7 @@ class ArionReader:
                 "name": info.get("name", "Main" if tid == default_thread else tid),
                 "created_at": info.get("created_at", ""),
                 "has_checkpoint": tid in checkpoint_threads,
+                "wrapping_enabled": info.get("wrapping_enabled", True),
             }
             if info.get("model"):
                 row["model"] = info["model"]
@@ -302,6 +303,16 @@ class ArionReader:
             "kind": "thread_model",
             "model": model,
         })
+
+    def set_wrapping_enabled(self, thread_id: str, enabled: bool) -> dict[str, str]:
+        """Persist wrapping_enabled for a thread (no inbox message needed — agent runner reads threads.json directly)."""
+        meta = self._load_threads_meta()
+        meta.setdefault(thread_id, {})
+        meta[thread_id]["wrapping_enabled"] = enabled
+        if "created_at" not in meta[thread_id]:
+            meta[thread_id]["created_at"] = datetime.now().isoformat()
+        self._save_threads_meta(meta)
+        return {"status": "updated", "thread_id": thread_id, "wrapping_enabled": enabled}
 
 
 def _get_msg_attr(msg: Any, key: str, default: Any = None) -> Any:

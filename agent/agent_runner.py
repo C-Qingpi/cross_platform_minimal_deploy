@@ -391,6 +391,13 @@ async def _run_turn(
         _current_abort.reset(token)
 
 
+def _wrapping_enabled(workspace: Path, thread_id: str) -> bool:
+    """Read wrapping_enabled from threads.json (default True)."""
+    threads_file = workspace / ".arion" / "threads.json"
+    meta = json.loads(threads_file.read_text(encoding="utf-8-sig"))
+    return meta.get(thread_id, {}).get("wrapping_enabled", True)
+
+
 async def _process_queue(agent_id: str, thread_id: str) -> None:
     runtime = _thread_runtime(agent_id, thread_id)
     if runtime.task and not runtime.task.done():
@@ -398,6 +405,8 @@ async def _process_queue(agent_id: str, thread_id: str) -> None:
 
     async def _worker() -> None:
         agent = _get_agent(agent_id)
+        workspace = _runtime(agent_id).workspace
+        wrapping_enabled = _wrapping_enabled(workspace, thread_id)
         while runtime.queue:
             msg = runtime.queue.popleft()
             msg_id = msg.get("id", "")
@@ -406,14 +415,16 @@ async def _process_queue(agent_id: str, thread_id: str) -> None:
                 _apply_stop(agent_id, thread_id)
                 continue
             model = _resolve_model(agent_id, thread_id)
-            logger.info("Invoke %s on %s/%s with model %s", kind, agent_id, thread_id, model)
+            logger.info("Invoke %s on %s/%s with model %s (wrapping=%s)", kind, agent_id, thread_id, model, wrapping_enabled)
             if kind == "resume":
                 await _run_turn(agent_id, agent, None, msg_id, thread_id=thread_id, model=model, runtime=runtime)
             else:
-                wrapped = wrap_user_message(msg.get("content", ""))
+                content = msg.get("content", "")
+                if wrapping_enabled:
+                    content = wrap_user_message(content)
                 await _run_turn(
                     agent_id, agent,
-                    {"messages": [("user", wrapped)]},
+                    {"messages": [("user", content)]},
                     msg_id, thread_id=thread_id, model=model, runtime=runtime,
                 )
 

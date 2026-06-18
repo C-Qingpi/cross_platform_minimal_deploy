@@ -1,15 +1,15 @@
-"""Tests for the user prompt appendum (wrap_user_message + WORKFLOW_METHODOLOGY).
+"""Tests for user prompt wrapping (timestamp prefix + workflow methodology suffix).
 
 Verifies:
   1. wrap_user_message prepends a timestamp in the correct format.
   2. The timestamp includes: date, weekday, timezone, hours/minutes/seconds.
   3. The phrase "RECEIVED FROM USER:" appears after the timestamp.
   4. Content is preserved (stripped) after the prefix.
-  5. WORKFLOW_METHODOLOGY constant is a non-empty string.
-  6. WORKFLOW_METHODOLOGY mentions all five phases.
+  5. The workflow methodology is appended after the user content.
+  6. WORKFLOW_METHODOLOGY is a short non-empty string with all five phases.
   7. Edge cases: empty content, whitespace-only content, content with leading/trailing spaces.
   8. Timestamp reflects local timezone (not UTC).
-  9. pinned_instructions is wired correctly in agent_runner.py.
+  9. agent_runner passes WORKFLOW_METHODOLOGY as pinned_instructions AND it appears in wrap_user_message.
 """
 
 from __future__ import annotations
@@ -53,16 +53,17 @@ class TestWrapUserMessageFormat:
             f"  Expected pattern: {TIMESTAMP_PREFIX_RE.pattern}"
         )
 
-    def test_output_ends_with_original_content(self) -> None:
+    def test_output_contains_original_content(self) -> None:
         content = "Run the tests please."
         result = wrap_user_message(content)
-        assert result.endswith(content), f"Expected suffix {content!r}, got {result!r}"
+        assert content in result, f"Expected {content!r} in result, got {result!r}"
 
     def test_content_stripped(self) -> None:
         result = wrap_user_message("  hello world  ")
-        assert result.endswith("hello world"), (
+        assert "hello world" in result, (
             f"Content should be stripped, got: {result!r}"
         )
+        assert "  hello world  " not in result
 
     def test_empty_content(self) -> None:
         result = wrap_user_message("")
@@ -88,18 +89,16 @@ class TestWrapUserMessageFormat:
         # They should both be valid
         assert TIMESTAMP_PREFIX_RE.match(r1), f"First call failed: {r1!r}"
         assert TIMESTAMP_PREFIX_RE.match(r2), f"Second call failed: {r2!r}"
-        # The timestamps may be identical if called in the same second — that's OK
-        # but the prefix must still have the right shape
 
     def test_special_characters_preserved(self) -> None:
         content = "price is $50, look at file 'foo.py', env=TEST"
         result = wrap_user_message(content)
-        assert result.endswith(content), f"Special chars not preserved: {result!r}"
+        assert content in result, f"Special chars not preserved: {result!r}"
 
     def test_newlines_in_content(self) -> None:
         content = "line1\nline2\nline3"
         result = wrap_user_message(content)
-        assert result.endswith(content), f"Newlines not preserved: {result!r}"
+        assert content in result, f"Newlines not preserved: {result!r}"
 
 
 class TestWrapUserMessageTimezone:
@@ -115,18 +114,37 @@ class TestWrapUserMessageTimezone:
 
 
 # ---------------------------------------------------------------------------
-# WORKFLOW_METHODOLOGY tests
+# Workflow methodology suffix tests
 # ---------------------------------------------------------------------------
 
 
-class TestWorkflowMethodology:
-    """The methodology constant must contain all five phases."""
+class TestWorkflowMethodologySuffix:
+    """The workflow methodology must be appended to non-empty user messages."""
 
     PHASES = ["GATHER", "DO", "TEST", "FIX", "DELIVER"]
 
-    def test_is_non_empty_string(self) -> None:
+    def test_methodology_appended_to_content(self) -> None:
+        """Non-empty content gets the methodology suffix after a newline."""
+        result = wrap_user_message("hello")
+        assert WORKFLOW_METHODOLOGY in result, (
+            f"Workflow methodology should appear in wrapped message.\n"
+            f"  Got: {result!r}"
+        )
+
+    def test_methodology_not_appended_to_empty(self) -> None:
+        """Empty content should not get the methodology suffix."""
+        result = wrap_user_message("")
+        assert WORKFLOW_METHODOLOGY not in result, (
+            f"Empty content should not include methodology.\n"
+            f"  Got: {result!r}"
+        )
+
+    def test_methodology_is_short(self) -> None:
+        """Methodology should be a few sentences, not a long document."""
         assert isinstance(WORKFLOW_METHODOLOGY, str)
-        assert len(WORKFLOW_METHODOLOGY) > 200
+        assert 30 < len(WORKFLOW_METHODOLOGY) < 800, (
+            f"Methodology should be concise (30-800 chars), got {len(WORKFLOW_METHODOLOGY)}"
+        )
 
     def test_contains_all_phases(self) -> None:
         for phase in self.PHASES:
@@ -135,33 +153,47 @@ class TestWorkflowMethodology:
             )
 
     def test_phases_in_order(self) -> None:
-        """Check the five phase headings appear in GATHER→DO→TEST→FIX→DELIVER order."""
+        """Check the five phases appear in GATHER→DO→TEST→FIX→DELIVER order."""
         indices = [WORKFLOW_METHODOLOGY.index(phase) for phase in self.PHASES]
         assert indices == sorted(indices), (
             f"Phases not in order. Found at indices: "
             f"{list(zip(self.PHASES, indices))}"
         )
 
-    def test_gather_emphasises_reading_evicted_files(self) -> None:
-        """Gather section must mention re-reading files evicted from context."""
-        section = self._section_between("1. GATHER", "2. DO")
-        assert "re-read" in section.lower() or "reread" in section.lower(), (
-            f"Gather section should mention re-reading. Section:\n{section}"
+    def test_newline_separates_content_from_methodology(self) -> None:
+        """The methodology should be clearly separated from user content by a delimiter."""
+        result = wrap_user_message("hello")
+        assert "--- END OF USER MESSAGE ---" in result, (
+            f"Expected separator line in result.\n"
+            f"  Got: {result!r}"
         )
-
-    def _section_between(self, start: str, end: str) -> str:
-        idx_start = WORKFLOW_METHODOLOGY.index(f"### {start}")
-        idx_end = WORKFLOW_METHODOLOGY.index(f"### {end}")
-        return WORKFLOW_METHODOLOGY[idx_start:idx_end]
+        assert "<workflow>" in result, (
+            f"Expected <workflow> opening tag in result.\n"
+            f"  Got: {result!r}"
+        )
+        assert "</workflow>" in result, (
+            f"Expected </workflow> closing tag in result.\n"
+            f"  Got: {result!r}"
+        )
+        # Verify ordering: user message → separator → workflow tags
+        parts = result.split("\n")
+        user_line = next(i for i, p in enumerate(parts) if "RECEIVED FROM USER:" in p)
+        sep_line = next(i for i, p in enumerate(parts) if "END OF USER MESSAGE" in p)
+        wf_open = next(i for i, p in enumerate(parts) if "<workflow>" in p)
+        assert user_line < sep_line < wf_open, (
+            f"Order should be: user message → separator → workflow.\n"
+            f"  Line indices: user={user_line}, sep={sep_line}, workflow={wf_open}\n"
+            f"  Parts: {parts}"
+        )
 
 
 # ---------------------------------------------------------------------------
-# Integration: agent_runner passes pinned_instructions
+# Integration: agent_runner passes pinned_instructions AND wrap_user_message
 # ---------------------------------------------------------------------------
 
 
 class TestPinnedInstructionsWired:
-    """Verify create_agent_instance passes WORKFLOW_METHODOLOGY as pinned_instructions."""
+    """Methodology is in pinned_instructions (system prompt) AND user messages."""
 
     def test_pinned_instructions_in_create_call(self) -> None:
         """agent_runner.create_agent_instance must pass pinned_instructions=WORKFLOW_METHODOLOGY."""
@@ -172,6 +204,34 @@ class TestPinnedInstructionsWired:
             "agent_runner.py must pass pinned_instructions=WORKFLOW_METHODOLOGY "
             "to create_arion_agent. Check the create_agent_instance function."
         )
+
+    def test_workflow_import_present(self) -> None:
+        """WORKFLOW_METHODOLOGY must be imported in agent_runner.py."""
+        agent_runner_path = DEPLOY_DIR / "agent" / "agent_runner.py"
+        source = agent_runner_path.read_text(encoding="utf-8")
+
+        assert "WORKFLOW_METHODOLOGY" in source, (
+            "agent_runner.py must import WORKFLOW_METHODOLOGY from prompts. "
+            "It is used as pinned_instructions in create_agent_instance."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Sanity check
+# ---------------------------------------------------------------------------
+
+
+class TestSanityCheck:
+    """Quick functional check — run manually with pytest -s to see output."""
+
+    def test_real_output_example(self) -> None:
+        result = wrap_user_message("run tests")
+        print(f"\nWrapped output:\n{result}")
+        assert result.startswith("20")  # starts with year
+        assert "RECEIVED FROM USER: run tests" in result
+        assert "--- END OF USER MESSAGE ---" in result
+        assert "<workflow>" in result
+        assert "GATHER" in result
 
 
 # ---------------------------------------------------------------------------

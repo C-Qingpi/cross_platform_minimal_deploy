@@ -3,11 +3,8 @@
 System prompt: arion_agent ships BASE_ARION_PROMPT via IdentityMiddleware
 (identity/middleware.py) — always injected as <role>. Do not duplicate here.
 
-User prompt: wrap_user_message prepends a timestamp + "RECEIVED FROM USER:" prefix.
-
-The WORKFLOW_METHODOLOGY constant describes the standard agent workflow
-(gather → do → test → fix → deliver). It is injected as pinned_instructions
-in the system message by agent_runner.py.
+User prompt: wrap_user_message wraps each user message with a timestamp prefix
+and a workflow methodology suffix that guides the agent's process.
 """
 
 from __future__ import annotations
@@ -20,44 +17,20 @@ DEFAULT_SOUL = STANDARD_SOUL
 DEFAULT_DEEPMEMORY = STANDARD_DEEPMEMORY
 
 # ---------------------------------------------------------------------------
-# Workflow methodology — injected as pinned_instructions (system prompt)
+# Workflow methodology — appended to every user message
 # ---------------------------------------------------------------------------
 
 WORKFLOW_METHODOLOGY = """\
-## GATHER → DO → TEST → FIX → DELIVER
+<workflow>
+WORKFLOW: GATHER → REVIEW → DO → TEST → FIX → DELIVER.
 
-When handling user requests, follow these phases **in order**:
-
-### 1. GATHER
-Before taking any action, retrieve and **re-read** all documents relevant to the
-user's question. Do not rely on stale context from memory — files that were read
-earlier may have been evicted from context by summarization. Re-read the actual
-current file contents, especially:
-
-- **README** and any project-level documentation
-- **skills.md** (agent skill definitions)
-- The file(s) under active development or of editing interest
-- Guidelines, configuration files, and any pinned instructions
-- SOUL.md, DEEPMEMORY.md, SHALLOW_MEMORY.md (your own identity/memory)
-
-Use `list_files` to survey what exists before diving in.
-
-### 2. DO
-Execute the planned changes or actions using available tools. Prefer precise,
-minimal edits. Read before editing. Verify before assuming.
-
-### 3. TEST
-Run real, executable tests to identify unthought-of issues. Do not skip testing.
-Tests must be concrete and verifiable — not hypothetical. Edge cases matter.
-
-### 4. FIX
-Address any issues found during testing. Iterate until all tests pass
-and the implementation is solid.
-
-### 5. DELIVER
-Present the result clearly. Summarise what was done, what was tested, and
-any relevant outcomes or decisions.
-"""
+- GATHER: Read all relevant files before editing. Context windows evict — re-read before acting.
+- REVIEW: Before writing code, review the task against the codebase. What needs to change? What are the edge cases? Is there an existing pattern to follow?
+- DO: Make surgical, minimal changes. One step at a time.
+- TEST: Validate with real container smoke tests and end-to-end checks — not just unit tests. Verify the application actually works in its target environment.
+- FIX: If a test fails, diagnose the root cause, not the symptom. Re-read the relevant code before fixing.
+- DELIVER: Confirm all tests pass and the result is correct.
+</workflow>"""
 
 # ---------------------------------------------------------------------------
 # User message wrapper
@@ -72,12 +45,31 @@ def _local_now() -> datetime:
 
 
 def wrap_user_message(content: str) -> str:
-    """Wrap user input with a timestamp prefix.
+    """Wrap user input with timestamp prefix and workflow suffix.
 
-    Returns:  "<timestamp> RECEIVED FROM USER: <stripped content>"
+    Format:
+      <timestamp> RECEIVED FROM USER: <stripped content>
+      --- END OF USER MESSAGE ---
+      <workflow>
+      WORKFLOW: GATHER → REVIEW → DO → TEST → FIX → DELIVER.
+      ...
+      </workflow>
 
-    Example: "2026-06-19-(Thursday)-CST-14-30-00 RECEIVED FROM USER: hello"
+    The --- END OF USER MESSAGE --- delimiter and <workflow> tags ensure
+    the LLM sees the workflow as meta-instruction, not user content.
+
+    Example:
+      2026-06-19-(Thursday)-CST-14-30-00 RECEIVED FROM USER: hello
+      --- END OF USER MESSAGE ---
+      <workflow>
+      WORKFLOW: GATHER → REVIEW → DO → TEST → FIX → DELIVER.
+      ...
+      </workflow>
     """
     now = _local_now()
     ts = now.strftime(_TIMESTAMP_FMT)
-    return f"{ts} RECEIVED FROM USER: {content.strip()}"
+    stripped = content.strip()
+    wrapper = f"{ts} RECEIVED FROM USER: {stripped}"
+    if stripped:
+        wrapper += f"\n--- END OF USER MESSAGE ---\n{WORKFLOW_METHODOLOGY}"
+    return wrapper

@@ -42,6 +42,7 @@ export default function App() {
   const [animateFinalKey, setAnimateFinalKey] = useState<string | null>(null);
   const [createAgentOpen, setCreateAgentOpen] = useState(false);
   const [scrollFollowReset, setScrollFollowReset] = useState(0);
+  const [wrappingEnabled, setWrappingEnabled] = useState(true);
 
   const knownFinalKeysRef = useRef<Set<string>>(new Set());
   const contextRef = useRef("");
@@ -135,6 +136,11 @@ export default function App() {
       contextRef.current = ctx;
       knownFinalKeysRef.current = new Set();
       setAnimateFinalKey(null);
+      // Reset wrapping to threads.json value on thread switch
+      const t = threads.find((th) => th.thread_id === activeThreadId);
+      if (t?.wrapping_enabled !== undefined) {
+        setWrappingEnabled(t.wrapping_enabled);
+      }
     }
     const active = Boolean(agentState?.threads?.[activeThreadId]?.active);
     const rs = groupIntoRounds(messages, active);
@@ -188,6 +194,12 @@ export default function App() {
     await refreshThreads();
     pendingModelRef.current = null;
     refreshTail();
+  };
+
+  const handleWrappingToggle = async () => {
+    const next = !wrappingEnabled;
+    setWrappingEnabled(next);
+    await api.setThreadWrapping(activeAgentId, activeThreadId, next);
   };
 
   const handleCreateAgent = () => {
@@ -329,6 +341,24 @@ export default function App() {
                 {threadStatus === "summarizing" ? "summarizing" : "running"}
               </span>
             )}
+            <label className="flex items-center gap-1.5 cursor-pointer select-none" title={wrappingEnabled ? "User messages are wrapped (RECEIVED FROM USER: ...)" : "User messages sent raw, no wrapping"}>
+              <span className="text-xs text-slate-500">Wrap</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={wrappingEnabled}
+                onClick={handleWrappingToggle}
+                className={`relative inline-flex h-4 w-7 shrink-0 rounded-full border transition-colors ${
+                  wrappingEnabled ? "bg-indigo-500 border-indigo-500" : "bg-slate-200 border-slate-300"
+                }`}
+              >
+                <span
+                  className={`inline-block h-3 w-3 rounded-full bg-white shadow transition-transform ${
+                    wrappingEnabled ? "translate-x-3.5" : "translate-x-0.5"
+                  }`}
+                />
+              </button>
+            </label>
           </div>
         </header>
 

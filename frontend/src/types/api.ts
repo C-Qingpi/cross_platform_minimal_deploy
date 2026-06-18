@@ -27,6 +27,7 @@ export interface ThreadInfo {
   status?: string;
   active?: boolean;
   model?: string;
+  wrapping_enabled?: boolean;
 }
 
 export interface AgentInfo {

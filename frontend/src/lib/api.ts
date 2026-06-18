@@ -151,6 +151,13 @@ export async function fetchEvents(afterIndex = 0, agentId?: string): Promise<Eve
   return res.json();
 }
 
+export async function setThreadWrapping(agentId: string, threadId: string, enabled: boolean) {
+  const res = await fetch(`/api/thread/wrapping${qs({ agent_id: agentId, thread_id: threadId, enabled: String(enabled) })}`, {
+    method: "POST",
+  });
+  return res.json();
+}
+
 export async function fetchConfig() {
   const res = await fetch("/api/config");
   return res.json();

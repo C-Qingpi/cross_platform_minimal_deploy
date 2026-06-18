@@ -264,6 +264,13 @@ async def switch_model(req: ModelSwitchRequest, agent_id: str = Query("default")
     return state_machine.get_agent_state(agent_id)
 
 
+@app.post("/api/thread/wrapping")
+async def set_thread_wrapping(agent_id: str = Query("default"), thread_id: str | None = Query(None), enabled: bool = Query(True)):
+    """Toggle wrapping_enabled for a thread. Pass enabled=true to wrap, false to skip wrapping."""
+    tid = thread_id or default_thread_id(agent_id)
+    return _reader(agent_id).set_wrapping_enabled(tid, enabled)
+
+
 @app.get("/api/threads")
 async def list_threads(agent_id: str = Query("default")):
     reader = _reader(agent_id)
