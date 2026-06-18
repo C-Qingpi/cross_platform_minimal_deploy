@@ -41,7 +41,32 @@ e:/git_repo/
 
 Mac layout is the same idea under `~/Desktop/AgentLearning/`.
 
-## Setup
+### Mac: GitHub SSH + git pull (preserve runtime)
+
+If the Mac was previously synced via tarball, switch to git without losing agents/workspaces:
+
+```bash
+cd ~/Desktop/AgentLearning/cross_platform_minimal_deploy
+chmod +x mac_git_setup.sh
+./mac_git_setup.sh
+```
+
+This script:
+
+1. Creates `~/.ssh/id_ed25519` if needed and prints the public key for [GitHub SSH keys](https://github.com/settings/keys)
+2. `git pull` (or clone) `C-Qingpi/arion_agent` and `C-Qingpi/cross_platform_minimal_deploy` side by side
+3. Restores runtime files: `.env`, `agents.json`, `agent_config.toml`, `workspaces/`, `.arion/`, `.venv/`, `frontend/node_modules/`
+4. Runs `mac_setup.sh` to refresh pip/npm deps
+
+From Windows (pushes script and runs over SSH):
+
+```powershell
+cd cross_platform_minimal_deploy
+python scripts/run_mac_git_setup.py
+```
+
+If exit code 2: add the printed SSH public key to GitHub, then re-run.
+
 
 ```bash
 # Clone both repos side by side, then:
@@ -116,7 +141,7 @@ Mounts appear under `workspace/imported_directories/{name}/`.
 | Soul / memory | `STANDARD_SOUL`, `STANDARD_DEEPMEMORY` |
 | System prompt | arion `BASE_ARION_PROMPT` + `STANDARD_SOUL` / `STANDARD_DEEPMEMORY` |
 | User messages | pass-through (no deploy wrapper) |
-| Summarization | two-tier nonblocking compaction (prefetch headroom + hard compress; STANDARD_POLICY) |
+| Summarization | proactive prefetch apply in headroom zone + hard compress fallback (STANDARD_POLICY) |
 | Subagents | disabled |
 | File + shell | enabled |
 | Planning | disabled |
