@@ -67,9 +67,9 @@ echo "[1/3] Installing arion_agent (may take several minutes) ..."
 cd "$ROOT/arion_agent"
 "$UV" pip install -v -e ".[deepseek]" --python "$VPY"
 
-echo "[2/3] Installing deploy backend deps ..."
+echo "[2/3] Installing deploy backend deps (from pyproject.toml) ..."
 cd "$ROOT/cross_platform_minimal_deploy"
-"$UV" pip install -v -r requirements.txt --python "$VPY"
+"$UV" pip install -v -e ".[ssh]" --python "$VPY"
 
 echo "[3/3] Installing frontend deps ..."
 cd frontend
