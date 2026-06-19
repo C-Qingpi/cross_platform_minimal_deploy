@@ -254,7 +254,7 @@ function AgentActivityBlock({
             <StreamPreviewBlock draft={streamDraft} live={live} model={model} onReveal={onDraftReveal} />
           )}
           <div ref={endRef} />
-          {!isAtBottom && (
+          {!isAutoFollow || !isAtBottom ? (
             <button
               type="button"
               onClick={jumpToBottom}
@@ -262,7 +262,7 @@ function AgentActivityBlock({
             >
               Latest
             </button>
-          )}
+          ) : null}
         </div>
       </div>
     </div>

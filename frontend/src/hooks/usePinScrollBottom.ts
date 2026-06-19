@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 const BOTTOM_THRESHOLD = 48;
 /** Ease toward bottom each frame during live follow (higher = snappier). */
 const SCROLL_EASE = 0.22;
-/** Snap when within this many px of target. */
+/** Snap when within this many px of target; also used to re-attach auto-follow at strict bottom. */
 const SCROLL_SNAP_PX = 1.5;
 /** Treat this many px of upward scrollTop as intentional user scroll-up. */
 const SCROLL_UP_EPSILON = 0.5;
@@ -39,8 +39,9 @@ function isScrollbarPointer(el: HTMLElement, e: PointerEvent): boolean {
 /**
  * Auto-follow is pure state — only enableAutoFollow / disableAutoFollow change it.
  *
- * Enable: jumpToBottom, followLive rising edge, followResetKey (send message).
- * Disable: any user scroll-up on THIS container (even 1px), or explicit jump cancel.
+ * Enable: jumpToBottom, followLive rising edge, followResetKey (send message),
+ *   or user manually scrolls to strict bottom while detached.
+ * Disable: any user scroll-up on THIS container (even 1px).
  * Content growth only scrolls while auto-follow is on; never toggles the flag.
  */
 export function usePinScrollBottom(
@@ -178,10 +179,12 @@ export function usePinScrollBottom(
 
     if (currentTop < prevTop - SCROLL_UP_EPSILON) {
       disableAutoFollow();
+    } else if (!autoFollowRef.current && dist <= SCROLL_SNAP_PX) {
+      enableAutoFollow();
     }
 
     lastScrollTopRef.current = currentTop;
-  }, [disableAutoFollow]);
+  }, [disableAutoFollow, enableAutoFollow]);
 
   useEffect(() => {
     const el = scrollRef.current;
