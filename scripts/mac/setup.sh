@@ -86,6 +86,9 @@ echo "[2/3] Installing deploy backend deps (from pyproject.toml) ..."
 cd "$DEPLOY_DIR"
 "$UV" pip install -v -e ".[ssh]" --python "$VPY"
 
+echo "Verifying core imports ..."
+"$VPY" -c "import typing_extensions; from langchain_core._api.deprecation import deprecated; print('langchain_core ok')"
+
 echo "[3/3] Installing frontend deps ..."
 cd "$DEPLOY_DIR/frontend"
 npm install --loglevel info
