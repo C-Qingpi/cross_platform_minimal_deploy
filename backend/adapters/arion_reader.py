@@ -246,6 +246,14 @@ class ArionReader:
             conn.execute("DELETE FROM writes WHERE thread_id = ?", (thread_id,))
             conn.commit()
             conn.close()
+        # Delete display-log so old messages don't reappear when a new thread reuses the name.
+        display_log = self._display_log_path(thread_id)
+        if display_log.exists():
+            display_log.unlink()
+        # Delete stream-draft so stale drafts don't show for a recreated thread.
+        stream_draft = self._stream_draft_path(thread_id)
+        if stream_draft.exists():
+            stream_draft.unlink()
         return {"status": "deleted", "thread_id": thread_id}
 
     def get_persisted_thread_models(self) -> dict[str, dict[str, str]]:
