@@ -175,6 +175,20 @@ def _optional_middleware(workspace: Path) -> list:
     return [SearchEnvironment(workspace_dir=str(workspace))]
 
 
+def _warm_dev_search_indexers() -> None:
+    if not _is_dev_deploy():
+        return
+    from arion_agent.environments.search import SearchEnvironment, is_search_available
+
+    if not is_search_available():
+        logger.warning("Dev deploy: search extras not installed; skip search indexer warmup")
+        return
+    for entry in registry.list_agents():
+        ws = Path(entry["workspace"])
+        SearchEnvironment(ws, system_prompt=False).service.start()
+        logger.info("Search indexer warmup started for %s", ws)
+
+
 def create_agent_instance(agent_id: str, model_spec: str) -> object:
     from arion_agent import create_arion_agent
     from arion_agent.summarization.config import SummarizationConfig, SummarizationPolicy
@@ -570,6 +584,7 @@ async def main() -> None:
         events.agent_started(aid, _active_models[aid])
 
     logger.info("Agent runner started (%d agents)", len(agents))
+    _warm_dev_search_indexers()
     await poll_loop()
 
 

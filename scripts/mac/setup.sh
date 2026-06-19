@@ -95,7 +95,7 @@ cd "$DEPLOY_DIR/frontend"
 npm install --loglevel info
 
 cd "$DEPLOY_DIR"
-chmod +x start.sh stop.sh deploy_env.sh start.command stop.command setup.command scripts/mac/setup.sh scripts/mac/git_setup.sh 2>/dev/null || true
+chmod +x start.sh stop.sh deploy_env.sh start.command stop.command setup.command pull_setup.command scripts/mac/setup.sh scripts/mac/git_setup.sh scripts/mac/pull_setup.sh 2>/dev/null || true
 chmod +x start.sh stop.sh
 
 if [[ ! -f .env ]]; then

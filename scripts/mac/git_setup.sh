@@ -252,8 +252,8 @@ pull_or_clone() {
 
 fix_scripts() {
   cd "$DEPLOY_DIR"
-  chmod +x start.sh stop.sh deploy_env.sh scripts/mac/setup.sh scripts/mac/git_setup.sh *.command 2>/dev/null || true
-  for f in start.sh stop.sh start.command stop.command setup.command scripts/mac/setup.sh scripts/mac/git_setup.sh; do
+  chmod +x start.sh stop.sh deploy_env.sh scripts/mac/setup.sh scripts/mac/git_setup.sh scripts/mac/pull_setup.sh pull_setup.command *.command 2>/dev/null || true
+  for f in start.sh stop.sh start.command stop.command setup.command pull_setup.command scripts/mac/setup.sh scripts/mac/git_setup.sh scripts/mac/pull_setup.sh; do
     [[ -f "$f" ]] && sed -i '' 's/\r$//' "$f" 2>/dev/null || true
   done
 }
