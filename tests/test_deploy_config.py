@@ -50,12 +50,14 @@ def test_apply_runtime_env_pins_root(deploy_config_dir, monkeypatch: pytest.Monk
     assert os.environ["ARION_DEPLOY_MODE"] == "dev"
 
 
-def test_apply_runtime_env_prod_unsets_dev_mode(deploy_config_dir, monkeypatch: pytest.MonkeyPatch):
+def test_apply_runtime_env_prod_sets_dev_mode(deploy_config_dir, monkeypatch: pytest.MonkeyPatch):
     root, cfg = deploy_config_dir
     cfg.write_text("mode=prod\n", encoding="utf-8")
-    monkeypatch.setenv("ARION_DEPLOY_MODE", "dev")
+    monkeypatch.delenv("ARION_DEPLOY_MODE", raising=False)
     apply_runtime_env(root)
-    assert "ARION_DEPLOY_MODE" not in os.environ
+    assert os.environ["ARION_DEPLOY_MODE"] == "dev"
+    assert os.environ["BACKEND_PORT"] == "8921"
+    assert os.environ["FRONTEND_PORT"] == "5175"
 
 
 def test_missing_config_raises(deploy_config_dir):

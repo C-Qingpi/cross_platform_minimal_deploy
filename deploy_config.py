@@ -68,10 +68,7 @@ def apply_runtime_env(deploy_dir: Path) -> DeployConfig:
     os.environ["DEPLOY_ROOT"] = str(cfg.deploy_root)
     os.environ["BACKEND_PORT"] = str(cfg.backend_port)
     os.environ["FRONTEND_PORT"] = str(cfg.frontend_port)
-    if cfg.is_dev:
-        os.environ["ARION_DEPLOY_MODE"] = "dev"
-    else:
-        os.environ.pop("ARION_DEPLOY_MODE", None)
+    os.environ["ARION_DEPLOY_MODE"] = "dev"
     return cfg
 
 
@@ -85,20 +82,16 @@ def _emit_shell(deploy_dir: Path, *, shell: str) -> None:
             f'export DEPLOY_ROOT="{root}"',
             f"export BACKEND_PORT={cfg.backend_port}",
             f"export FRONTEND_PORT={cfg.frontend_port}",
+            'export ARION_DEPLOY_MODE=dev',
         ]
-        if cfg.is_dev:
-            lines.append('export ARION_DEPLOY_MODE=dev')
-        else:
-            lines.append("unset ARION_DEPLOY_MODE")
     elif shell == "cmd":
         lines = [
             f"set DEPLOY_MODE={cfg.mode}",
             f"set DEPLOY_ROOT={root}",
             f"set BACKEND_PORT={cfg.backend_port}",
             f"set FRONTEND_PORT={cfg.frontend_port}",
+            "set ARION_DEPLOY_MODE=dev",
         ]
-        if cfg.is_dev:
-            lines.append("set ARION_DEPLOY_MODE=dev")
     else:
         raise ValueError(f"unsupported shell: {shell!r}")
     sys.stdout.write("\n".join(lines) + "\n")

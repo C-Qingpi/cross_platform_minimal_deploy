@@ -79,11 +79,7 @@ VPY="$VENV/bin/python"
 
 echo "[1/3] Installing arion_agent (may take several minutes) ..."
 cd "$ARION_DIR"
-if [[ "$DEPLOY_MODE" == "dev" ]]; then
-  ARION_EXTRAS="deepseek,search"
-else
-  ARION_EXTRAS="deepseek"
-fi
+ARION_EXTRAS="deepseek,search"
 "$UV" pip install -v -e ".[$ARION_EXTRAS]" --python "$VPY"
 
 echo "[2/3] Installing deploy backend deps (from pyproject.toml) ..."

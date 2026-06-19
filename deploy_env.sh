@@ -45,12 +45,11 @@ deploy_env_load() {
   if [[ "$mode" == "dev" ]]; then
     DEPLOY_BACKEND_PORT="${backend_port:-8920}"
     DEPLOY_FRONTEND_PORT="${frontend_port:-5174}"
-    export ARION_DEPLOY_MODE=dev
   else
     DEPLOY_BACKEND_PORT="${backend_port:-8921}"
     DEPLOY_FRONTEND_PORT="${frontend_port:-5175}"
-    unset ARION_DEPLOY_MODE
   fi
+  export ARION_DEPLOY_MODE=dev
 
   export DEPLOY_ROOT="$root"
   export BACKEND_PORT="$DEPLOY_BACKEND_PORT"

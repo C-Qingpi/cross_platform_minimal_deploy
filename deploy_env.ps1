@@ -31,14 +31,13 @@ function Import-DeployEnv {
 
     $script:DeployMode = $mode
     if ($mode -eq "dev") {
-        $env:ARION_DEPLOY_MODE = "dev"
         $env:BACKEND_PORT = if ($backendPort) { $backendPort } else { "8920" }
         $env:FRONTEND_PORT = if ($frontendPort) { $frontendPort } else { "5174" }
     } else {
-        Remove-Item Env:ARION_DEPLOY_MODE -ErrorAction SilentlyContinue
         $env:BACKEND_PORT = if ($backendPort) { $backendPort } else { "8921" }
         $env:FRONTEND_PORT = if ($frontendPort) { $frontendPort } else { "5175" }
     }
+    $env:ARION_DEPLOY_MODE = "dev"
 
     $env:DEPLOY_ROOT = $Root
     $env:DEPLOY_MODE = $mode

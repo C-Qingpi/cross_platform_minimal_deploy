@@ -1,8 +1,8 @@
 # Copy to deploy.config — one file per checkout (ArionAgentDev vs ArionAgentProd).
-# mode controls ports, ARION_DEPLOY_MODE, and whether semantic_search is enabled.
+# mode controls ports only. Agent features (including semantic_search) match dev on both.
 #
-#   mode=dev  -> backend 8920, frontend 5174, semantic_search on
-#   mode=prod -> backend 8921, frontend 5175, semantic_search off
+#   mode=dev  -> backend 8920, frontend 5174
+#   mode=prod -> backend 8921, frontend 5175
 #
 # DEPLOY_ROOT is always this checkout directory; do not set it in .env.
 

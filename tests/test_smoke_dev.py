@@ -64,13 +64,15 @@ class TestDevSearchMiddleware:
         assert len(middleware) == 1
         assert middleware[0].tools[0].name == "semantic_search"
 
-    def test_prod_skips_semantic_search_tool(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_prod_enables_semantic_search_tool(self, monkeypatch: pytest.MonkeyPatch) -> None:
         pytest.importorskip("fastembed")
-        monkeypatch.delenv("ARION_DEPLOY_MODE", raising=False)
+        monkeypatch.setenv("ARION_DEPLOY_MODE", "dev")
         ws = _setup_registry()
         ar = _import_agent_runner()
 
-        assert ar._optional_middleware(ws) == []
+        middleware = ar._optional_middleware(ws)
+        assert len(middleware) == 1
+        assert middleware[0].tools[0].name == "semantic_search"
 
 
 class TestInterruptResume:
