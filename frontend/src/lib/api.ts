@@ -39,17 +39,12 @@ export interface FsBrowseResult {
 
 export async function fetchFsRoots(): Promise<FsRoot[]> {
   const res = await fetch("/api/fs/roots");
-  if (!res.ok) throw new Error("Failed to load filesystem roots");
-  return res.json();
+  return safeJson(res, "Failed to load filesystem roots");
 }
 
 export async function browseDirectory(path: string): Promise<FsBrowseResult> {
   const res = await fetch(`/api/fs/browse${qs({ path })}`);
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || "Failed to browse directory");
-  }
-  return res.json();
+  return safeJson(res, "Failed to browse directory");
 }
 
 export async function fetchDefaultWorkspace(agentId: string): Promise<string> {
@@ -74,11 +69,7 @@ export async function createAgent(body: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!res.ok) {
-    const bodyParsed = await res.json().catch(() => ({}));
-    throw new Error(bodyParsed.detail || "Failed to create agent");
-  }
-  return res.json();
+  return safeJson(res, "Failed to create agent");
 }
 
 export async function deleteAgent(agentId: string) {
