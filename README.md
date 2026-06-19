@@ -101,6 +101,8 @@ Open http://localhost:5174
 
 **Dev-only:** `start_dev.*` sets `ARION_DEPLOY_MODE=dev`, which enables optional `semantic_search` middleware (background index at `{workspace}/.arion/index/`). Install with editable arion_agent including search extras: `pip install -e ../arion_agent[deepseek,search]`.
 
+> **After a `git pull` that adds new optional extras** (e.g. `[search]`), re-run `setup.command` (macOS) or `mac_setup.sh` to refresh the venv. The setup script already installs `arion-agent[deepseek,search]` — a stale editable install won't have the new extras until it's rebuilt.
+
 Smoke tests:
 
 ```bash
