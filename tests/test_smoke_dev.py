@@ -191,3 +191,47 @@ class TestSemanticSearchLive:
             assert "project_notes.md" in out or "Nebula" in out
 
         asyncio.run(_run())
+
+    def test_search_config_template_and_reset_index(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        pytest.importorskip("fastembed")
+        monkeypatch.setenv("ARION_DEPLOY_MODE", "dev")
+        ws = _setup_registry()
+        doc = ws / "notes.md"
+        doc.write_text("Reset smoke marker ZEPHYR-42\n", encoding="utf-8")
+
+        async def _run() -> None:
+            ar = _import_agent_runner()
+            middleware = ar._optional_middleware(ws)
+            search_mw = middleware[0]
+            svc = search_mw.service
+            svc.start()
+
+            cfg = ws / ".arion" / "search.json"
+            assert cfg.is_file()
+            assert "// Semantic index scope" in cfg.read_text(encoding="utf-8")
+            assert (ws / ".searchignore").is_file()
+
+            deadline = time.time() + 120
+            while time.time() < deadline:
+                st = svc.status()
+                if st.indexed_files >= 1:
+                    break
+                await asyncio.sleep(0.5)
+            assert svc.status().indexed_files >= 1
+
+            svc.reset_index()
+            assert svc.store.chunk_count() == 0
+
+            deadline = time.time() + 120
+            while time.time() < deadline:
+                st = svc.status()
+                if st.indexed_files >= 1:
+                    break
+                await asyncio.sleep(0.5)
+
+            tool = search_mw.tools[0]
+            out = tool.invoke({"query": "ZEPHYR-42 reset smoke marker"})
+            assert "notes.md" in out or "ZEPHYR" in out
+            svc.stop()
+
+        asyncio.run(_run())

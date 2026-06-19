@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import shutil
 import sys
 import time
 from contextlib import asynccontextmanager
@@ -356,6 +357,36 @@ async def update_config(req: ConfigUpdateRequest):
     from config import config_to_safe_dict, update_config
     config = update_config(model=req.model, providers=req.providers)
     return config_to_safe_dict(config)
+
+
+def _clear_search_index_files(workspace: Path) -> None:
+    index_dir = workspace / ".arion" / "index"
+    index_dir.mkdir(parents=True, exist_ok=True)
+    manifest = index_dir / "manifest.json"
+    manifest.write_text("{}", encoding="utf-8")
+    lance_dir = index_dir / "lance"
+    if lance_dir.is_dir():
+        for child in lance_dir.iterdir():
+            if child.is_dir():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+
+
+@app.post("/api/search/reset-index")
+async def reset_search_index(agent_id: str = Query("default")):
+    info = registry.get_agent(agent_id)
+    if info is None:
+        raise HTTPException(404, f"Agent not found: {agent_id}")
+    workspace = Path(info["workspace"])
+    _reader(agent_id).write_inbox_reset_search_index()
+    _clear_search_index_files(workspace)
+    return {
+        "status": "queued",
+        "agent_id": agent_id,
+        "workspace": str(workspace),
+        "message": "Search index cleared; agent runner will rebuild in the background.",
+    }
 
 
 if __name__ == "__main__":

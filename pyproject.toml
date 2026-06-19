@@ -1,6 +1,6 @@
 [project]
 name = "arion-agent-deploy"
-version = "0.4.2"
+version = "0.4.3"
 description = "Deployment infrastructure for the Arion agent system"
 readme = "README.md"
 license = { text = "MIT" }
@@ -23,7 +23,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "arion-agent[deepseek]>=0.3.1",
+    "arion-agent[deepseek]>=0.4.3",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
     "python-dotenv>=1.0.0",
@@ -31,13 +31,13 @@ dependencies = [
 
 [project.optional-dependencies]
 all-providers = [
-    "arion-agent[all-providers]>=0.3.1",
+    "arion-agent[all-providers]>=0.4.3",
 ]
 browser = [
-    "arion-agent[browser]>=0.3.1",
+    "arion-agent[browser]>=0.4.3",
 ]
 search = [
-    "arion-agent[search]>=0.3.1",
+    "arion-agent[search]>=0.4.3",
 ]
 ssh = [
     "paramiko>=3.0.0",
@@ -45,7 +45,7 @@ ssh = [
 dev = [
     "pytest>=7.4.0",
     "pytest-asyncio>=0.21.0",
-    "arion-agent[search]>=0.3.1",
+    "arion-agent[search]>=0.4.3",
 ]
 
 [build-system]

@@ -235,6 +235,24 @@ export default function App() {
     await refreshThreads();
   };
 
+  const handleResetSearchIndex = async () => {
+    if (
+      !confirm(
+        "Clear the semantic search index for this agent's workspace?\n\n"
+        + "The index will rebuild in the background. Search may return no results until indexing catches up.",
+      )
+    ) {
+      return;
+    }
+    showToast("Resetting search index…", 2000);
+    try {
+      const result = await api.resetSearchIndex(activeAgentId);
+      showToast(result.message, 4000);
+    } catch {
+      showToast("Failed to reset search index");
+    }
+  };
+
   const togglePanel = (panel: ExpandedPanel) => {
     setExpandedPanel((cur) => (cur === panel ? null : panel));
   };
@@ -359,6 +377,14 @@ export default function App() {
                 />
               </button>
             </label>
+            <button
+              type="button"
+              onClick={handleResetSearchIndex}
+              className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
+              title="Clear semantic search index and rebuild from workspace"
+            >
+              Reset index
+            </button>
           </div>
         </header>
 

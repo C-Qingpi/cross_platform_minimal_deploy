@@ -318,6 +318,14 @@ class ArionReader:
             "model": model,
         })
 
+    def write_inbox_reset_search_index(self) -> dict[str, str]:
+        return self._write_inbox({
+            "timestamp": datetime.now().isoformat(),
+            "id": f"reset-search-{int(datetime.now().timestamp() * 1000)}",
+            "thread_id": "*",
+            "kind": "reset_search_index",
+        })
+
     def set_wrapping_enabled(self, thread_id: str, enabled: bool) -> dict[str, str]:
         """Persist wrapping_enabled for a thread (no inbox message needed — agent runner reads threads.json directly)."""
         meta = self._load_threads_meta()

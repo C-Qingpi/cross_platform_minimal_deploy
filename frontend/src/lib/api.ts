@@ -163,3 +163,10 @@ export async function fetchConfig() {
   const res = await fetch("/api/config");
   return safeJson(res, "Failed to load config");
 }
+
+export async function resetSearchIndex(agentId: string) {
+  const res = await fetch(`/api/search/reset-index${qs({ agent_id: agentId })}`, {
+    method: "POST",
+  });
+  return safeJson<{ status: string; message: string }>(res, "Failed to reset search index");
+}

@@ -509,6 +509,21 @@ def _apply_agent_model(agent_id: str, model: str) -> None:
             logger.info("Agent model switch interrupts turn %s/%s", agent_id, tid)
 
 
+def _reset_search_index(agent_id: str) -> None:
+    if not _is_dev_deploy():
+        return
+    from arion_agent.environments.search import SearchEnvironment, is_search_available
+
+    if not is_search_available():
+        logger.warning("Search index reset skipped: search extras not installed")
+        return
+    info = registry.get_agent(agent_id)
+    if info is None:
+        return
+    SearchEnvironment.reset_index_for_workspace(Path(info["workspace"]))
+    logger.info("Search index reset for agent=%s workspace=%s", agent_id, info["workspace"])
+
+
 def _enqueue(agent_id: str, items: list[dict]) -> None:
     threads_touched: set[str] = set()
     for item in items:
@@ -524,6 +539,9 @@ def _enqueue(agent_id: str, items: list[dict]) -> None:
             continue
         if kind == "model_switch":
             _apply_agent_model(agent_id, item["model"])
+            continue
+        if kind == "reset_search_index":
+            _reset_search_index(agent_id)
             continue
         rt = _thread_runtime(agent_id, thread_id)
         rt.queue.append(item)
