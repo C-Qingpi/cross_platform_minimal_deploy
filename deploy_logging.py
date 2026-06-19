@@ -106,7 +106,7 @@ def install_signal_logging(service: str) -> None:
         )
         from failure_watchdog import capture
 
-        if signum == signal.SIGHUP:
+        if hasattr(signal, "SIGHUP") and signum == signal.SIGHUP:
             capture(
                 "signal",
                 {
@@ -118,6 +118,9 @@ def install_signal_logging(service: str) -> None:
         if signum in (signal.SIGTERM, signal.SIGINT):
             raise SystemExit(128 + signum)
 
-    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+    signals = [signal.SIGTERM, signal.SIGINT]
+    if hasattr(signal, "SIGHUP"):
+        signals.append(signal.SIGHUP)
+    for sig in signals:
         signal.signal(sig, _handler)
     log.info("Signal logging enabled pid=%s ppid=%s", os.getpid(), os.getppid())

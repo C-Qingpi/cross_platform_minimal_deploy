@@ -5,11 +5,13 @@ export PATH="$HOME/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bi
 export UV_INDEX_URL="${UV_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}"
 export npm_config_registry="${npm_config_registry:-https://registry.npmmirror.com}"
 
-ROOT="$HOME/Desktop/AgentLearning"
+DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+STACK_ROOT="$(cd "$DEPLOY_DIR/.." && pwd)"
+ARION_DIR="$STACK_ROOT/arion_agent"
 PY="$HOME/.local/bin/python3.12"
 UV="$HOME/.local/bin/uv"
-VENV="$ROOT/cross_platform_minimal_deploy/.venv"
-LOG="$HOME/Desktop/mac_setup.log"
+VENV="$DEPLOY_DIR/.venv"
+LOG="${MAC_SETUP_LOG:-$HOME/Desktop/mac_setup.log}"
 NODE_VERSION="${NODE_VERSION:-20.19.2}"
 
 exec > >(tee -a "$LOG") 2>&1
@@ -64,18 +66,18 @@ fi
 VPY="$VENV/bin/python"
 
 echo "[1/3] Installing arion_agent (may take several minutes) ..."
-cd "$ROOT/arion_agent"
-"$UV" pip install -v -e ".[deepseek]" --python "$VPY"
+cd "$ARION_DIR"
+"$UV" pip install -v -e ".[deepseek,search]" --python "$VPY"
 
 echo "[2/3] Installing deploy backend deps (from pyproject.toml) ..."
-cd "$ROOT/cross_platform_minimal_deploy"
+cd "$DEPLOY_DIR"
 "$UV" pip install -v -e ".[ssh]" --python "$VPY"
 
 echo "[3/3] Installing frontend deps ..."
-cd frontend
+cd "$DEPLOY_DIR/frontend"
 npm install --loglevel info
 
-cd "$ROOT/cross_platform_minimal_deploy"
+cd "$DEPLOY_DIR"
 chmod +x start.sh stop.sh start.command stop.command setup.command mac_setup.sh 2>/dev/null || true
 chmod +x start.sh stop.sh
 
@@ -88,6 +90,7 @@ fi
 
 echo ""
 echo "Setup complete at $(date -Iseconds)"
-echo "  cd $ROOT/cross_platform_minimal_deploy"
+echo "  stack: $STACK_ROOT"
+echo "  cd $DEPLOY_DIR"
 echo "  ./start.sh"
 echo "Log: $LOG"

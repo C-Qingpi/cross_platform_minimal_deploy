@@ -99,6 +99,15 @@ On macOS you can also double-click **`start.command`** / **`stop.command`** in F
 
 Open http://localhost:5174
 
+**Dev-only:** `start_dev.*` sets `ARION_DEPLOY_MODE=dev`, which enables optional `semantic_search` middleware (background index at `{workspace}/.arion/index/`). Install with editable arion_agent including search extras: `pip install -e ../arion_agent[deepseek,search]`.
+
+Smoke tests:
+
+```bash
+python -m pytest tests/test_smoke_dev.py -v
+python agent/agent_runner.py --test-resume
+```
+
 Processes:
 
 | Service | Port (default) |

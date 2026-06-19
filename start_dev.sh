@@ -12,6 +12,7 @@ if [[ ! -f .env ]]; then
 fi
 
 export DEPLOY_ROOT="${DEPLOY_ROOT:-$ROOT}"
+export ARION_DEPLOY_MODE=dev
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:$PATH"
 BACKEND_PORT=8920
 FRONTEND_PORT=5174

@@ -36,12 +36,16 @@ all-providers = [
 browser = [
     "arion-agent[browser]>=0.3.1",
 ]
+search = [
+    "arion-agent[search]>=0.3.1",
+]
 ssh = [
     "paramiko>=3.0.0",
 ]
 dev = [
     "pytest>=7.4.0",
     "pytest-asyncio>=0.21.0",
+    "arion-agent[search]>=0.3.1",
 ]
 
 [build-system]

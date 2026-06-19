@@ -5,6 +5,7 @@ param(
 )
 
 $ROOT = Split-Path -Parent $MyInvocation.MyCommand.Path
+$env:ARION_DEPLOY_MODE = "dev"
 $RUN_DIR = Join-Path $ROOT ".run"
 if (-not (Test-Path $RUN_DIR)) { New-Item -ItemType Directory -Path $RUN_DIR -Force | Out-Null }
 
@@ -22,6 +23,7 @@ Start-Sleep -Seconds 2
 Write-Host "Starting agent runner ..."
 $agentJob = Start-Job -Name "agent-runner" -ScriptBlock {
     param($r, $p)
+    $env:ARION_DEPLOY_MODE = "dev"
     Set-Location (Join-Path $r "agent")
     & $p agent_runner.py
 } -ArgumentList $ROOT, $venvPython

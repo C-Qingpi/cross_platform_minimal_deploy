@@ -156,6 +156,21 @@ _MODEL_CONTEXT_WINDOWS: dict[str, int] = {
 }
 
 
+def _is_dev_deploy() -> bool:
+    return os.environ.get("ARION_DEPLOY_MODE", "").strip().lower() == "dev"
+
+
+def _optional_middleware(workspace: Path) -> list:
+    if not _is_dev_deploy():
+        return []
+    from arion_agent.environments.search import SearchEnvironment, is_search_available
+
+    if not is_search_available():
+        logger.warning("Dev deploy: search extras not installed; skip SearchEnvironment")
+        return []
+    return [SearchEnvironment(workspace_dir=str(workspace))]
+
+
 def create_agent_instance(agent_id: str, model_spec: str) -> object:
     from arion_agent import create_arion_agent
     from arion_agent.summarization.config import SummarizationConfig, SummarizationPolicy
@@ -199,6 +214,7 @@ def create_agent_instance(agent_id: str, model_spec: str) -> object:
         network_allowed=True,
         session_log=True,
         checkpointer=True,
+        middleware=_optional_middleware(workspace) or None,
         on_compress=_make_compress_handler(agent_id),
         abort_check=_abort_check,
         on_llm_stream=_make_llm_stream_handler(agent_id, workspace),
@@ -556,9 +572,15 @@ async def main() -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--test", action="store_true")
+    parser.add_argument(
+        "--test-resume",
+        action="store_true",
+        help="Smoke: cancel mid-turn then resume from checkpoint",
+    )
     args = parser.parse_args()
 
-    if args.test:
+    if args.test or args.test_resume:
+        os.environ.setdefault("ARION_DEPLOY_MODE", "dev")
         config = load_config()
         apply_provider_env(config)
         register_proxies()
@@ -566,10 +588,12 @@ if __name__ == "__main__":
         if not agents:
             registry.create_agent("default", model=get_model())
         aid = registry.list_agents()[0]["agent_id"]
-        agent = create_agent_instance(aid, get_model())
         tid = default_thread_id(aid)
+        model = get_model()
+        runtime = _thread_runtime(aid, tid)
 
-        async def _test() -> None:
+        async def _test_hello() -> None:
+            agent = create_agent_instance(aid, model)
             result = await agent.ainvoke(
                 {"messages": [("user", wrap_user_message("Say hello in one sentence."))]},
                 config={"configurable": {"thread_id": tid}},
@@ -577,7 +601,39 @@ if __name__ == "__main__":
             ai = [m for m in result["messages"] if getattr(m, "type", "") == "ai"]
             print(ai[-1].content if ai else "no response")
 
-        asyncio.run(_test())
+        async def _test_resume_smoke() -> None:
+            class _SlowAgent:
+                def __init__(self) -> None:
+                    self.calls: list[object | None] = []
+
+                async def ainvoke(self, payload, config=None):
+                    self.calls.append(payload)
+                    if payload is None:
+                        return {"messages": []}
+                    await asyncio.sleep(30)
+                    return {"messages": []}
+
+            slow = _SlowAgent()
+            turn = asyncio.create_task(
+                _run_turn(aid, slow, {"messages": [("user", "x")]}, "smoke-1",
+                          thread_id=tid, model=model, runtime=runtime)
+            )
+            await asyncio.sleep(0.3)
+            runtime.cancel_event.set()
+            await turn
+            assert slow.calls and slow.calls[0] is not None
+            resume = asyncio.create_task(
+                _run_turn(aid, slow, None, "smoke-resume",
+                          thread_id=tid, model=model, runtime=runtime)
+            )
+            await resume
+            assert None in slow.calls
+            print("interrupt+resume smoke: OK")
+
+        if args.test_resume:
+            asyncio.run(_test_resume_smoke())
+        else:
+            asyncio.run(_test_hello())
     else:
         try:
             asyncio.run(main())
