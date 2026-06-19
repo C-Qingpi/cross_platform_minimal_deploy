@@ -37,7 +37,7 @@ export function PaginatedConversationLog({
   const followLive = threadActive || Boolean(streamDraft);
 
   // Outer message log scroll — independent auto-follow from inner activity panel.
-  const { scrollRef, endRef, onScroll: onPinScroll, jumpToBottom, isAtBottom, isAutoFollow, notifyContentGrowth } =
+  const { scrollRef, endRef, onScroll: onPinScroll, jumpToBottom, isAutoFollow, notifyContentGrowth } =
     usePinScrollBottom(
       followLive,
       [
@@ -105,7 +105,7 @@ export function PaginatedConversationLog({
         </div>
       </main>
 
-      {!isAutoFollow || !isAtBottom ? (
+      {!isAutoFollow ? (
         <button
           type="button"
           onClick={jumpToBottom}

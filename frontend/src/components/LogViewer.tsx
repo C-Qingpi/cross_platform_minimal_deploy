@@ -204,7 +204,7 @@ function AgentActivityBlock({
   const followLive = live || Boolean(streamDraft);
 
   // Inner activity panel scroll — separate auto-follow; shares followResetKey with outer on send.
-  const { scrollRef, endRef, onScroll, jumpToBottom, isAtBottom, isAutoFollow, notifyContentGrowth } =
+  const { scrollRef, endRef, onScroll, jumpToBottom, isAutoFollow, notifyContentGrowth } =
     usePinScrollBottom(
       followLive,
       [
@@ -254,7 +254,7 @@ function AgentActivityBlock({
             <StreamPreviewBlock draft={streamDraft} live={live} model={model} onReveal={onDraftReveal} />
           )}
           <div ref={endRef} />
-          {!isAutoFollow || !isAtBottom ? (
+          {!isAutoFollow ? (
             <button
               type="button"
               onClick={jumpToBottom}
