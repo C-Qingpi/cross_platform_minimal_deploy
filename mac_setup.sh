@@ -77,6 +77,14 @@ echo "[3/3] Installing frontend deps ..."
 cd "$DEPLOY_DIR/frontend"
 npm install --loglevel info
 
+echo "[4/4] Pre-downloading semantic search embedding model (BAAI/bge-small-en-v1.5) ..."
+"$VPY" -c "
+from fastembed import TextEmbedding
+print('  Downloading embedding model to HuggingFace cache (~/.cache/huggingface/) ...')
+TextEmbedding(model_name='BAAI/bge-small-en-v1.5')
+print('  Embedding model ready (shared across all agent runners).')
+"
+
 cd "$DEPLOY_DIR"
 chmod +x start.sh stop.sh start.command stop.command setup.command mac_setup.sh 2>/dev/null || true
 chmod +x start.sh stop.sh
