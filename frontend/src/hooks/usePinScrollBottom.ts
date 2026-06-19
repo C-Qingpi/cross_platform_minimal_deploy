@@ -6,6 +6,8 @@ const BOTTOM_THRESHOLD = 48;
 const SCROLL_EASE = 0.22;
 /** Snap when within this many px of target. */
 const SCROLL_SNAP_PX = 1.5;
+/** Treat this many px of upward scrollTop as intentional user scroll-up. */
+const SCROLL_UP_EPSILON = 0.5;
 
 function distanceFromBottom(el: HTMLElement): number {
   return el.scrollHeight - el.scrollTop - el.clientHeight;
@@ -38,7 +40,7 @@ function isScrollbarPointer(el: HTMLElement, e: PointerEvent): boolean {
  * Auto-follow is pure state — only enableAutoFollow / disableAutoFollow change it.
  *
  * Enable: jumpToBottom, followLive rising edge, followResetKey (send message).
- * Disable: user scroll input on THIS container, or user manually hits strict bottom.
+ * Disable: any user scroll-up on THIS container (even 1px), or explicit jump cancel.
  * Content growth only scrolls while auto-follow is on; never toggles the flag.
  */
 export function usePinScrollBottom(
@@ -52,11 +54,15 @@ export function usePinScrollBottom(
   const programmaticRef = useRef(false);
   const programmaticRafRef = useRef(0);
   const smoothScrollRafRef = useRef(0);
-  const userScrollRef = useRef(false);
+  const lastScrollTopRef = useRef(0);
   const prevFollowLiveRef = useRef(followLive);
   const prevResetKeyRef = useRef<number | null>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [isAutoFollow, setIsAutoFollow] = useState(true);
+
+  const syncScrollTopRef = useCallback((el: HTMLElement) => {
+    lastScrollTopRef.current = el.scrollTop;
+  }, []);
 
   const clearProgrammatic = useCallback(() => {
     programmaticRef.current = false;
@@ -79,13 +85,14 @@ export function usePinScrollBottom(
     clearProgrammatic();
     programmaticRef.current = true;
     el.scrollTop = el.scrollHeight;
+    syncScrollTopRef(el);
     programmaticRafRef.current = requestAnimationFrame(() => {
       programmaticRafRef.current = requestAnimationFrame(() => {
         programmaticRafRef.current = 0;
         programmaticRef.current = false;
       });
     });
-  }, [clearProgrammatic, stopSmoothScroll]);
+  }, [clearProgrammatic, stopSmoothScroll, syncScrollTopRef]);
 
   const scrollToBottomSmooth = useCallback((el: HTMLElement) => {
     if (!autoFollowRef.current) return;
@@ -105,6 +112,7 @@ export function usePinScrollBottom(
 
       if (dist <= SCROLL_SNAP_PX) {
         el.scrollTop = target;
+        syncScrollTopRef(el);
         programmaticRef.current = false;
         smoothScrollRafRef.current = 0;
         setIsAtBottom(distanceFromBottom(el) <= BOTTOM_THRESHOLD);
@@ -112,17 +120,17 @@ export function usePinScrollBottom(
       }
 
       el.scrollTop = current + dist * SCROLL_EASE;
+      syncScrollTopRef(el);
       setIsAtBottom(distanceFromBottom(el) <= BOTTOM_THRESHOLD);
       smoothScrollRafRef.current = requestAnimationFrame(tick);
     };
 
     smoothScrollRafRef.current = requestAnimationFrame(tick);
-  }, []);
+  }, [syncScrollTopRef]);
 
   const disableAutoFollow = useCallback(() => {
     autoFollowRef.current = false;
     setIsAutoFollow(false);
-    userScrollRef.current = false;
     stopSmoothScroll();
     clearProgrammatic();
   }, [clearProgrammatic, stopSmoothScroll]);
@@ -130,7 +138,6 @@ export function usePinScrollBottom(
   const enableAutoFollow = useCallback(() => {
     autoFollowRef.current = true;
     setIsAutoFollow(true);
-    userScrollRef.current = false;
     const el = scrollRef.current;
     if (el) {
       scrollToBottomInstant(el);
@@ -151,17 +158,12 @@ export function usePinScrollBottom(
     scrollToBottomSmooth(el);
   }, [scrollToBottomSmooth]);
 
-  const markUserScroll = useCallback(() => {
-    userScrollRef.current = true;
-  }, []);
-
-  const stopFromUserInput = useCallback(
+  const stopFromUserScrollUp = useCallback(
     (el: HTMLElement, target: EventTarget | null) => {
       if (nestedScrollableBetween(el, target)) return;
-      markUserScroll();
       disableAutoFollow();
     },
-    [disableAutoFollow, markUserScroll],
+    [disableAutoFollow],
   );
 
   const onScroll = useCallback(() => {
@@ -171,41 +173,45 @@ export function usePinScrollBottom(
     const dist = distanceFromBottom(el);
     setIsAtBottom(dist <= BOTTOM_THRESHOLD);
 
-    if (programmaticRef.current) return;
+    const prevTop = lastScrollTopRef.current;
+    const currentTop = el.scrollTop;
 
-    if (userScrollRef.current) {
+    if (currentTop < prevTop - SCROLL_UP_EPSILON) {
       disableAutoFollow();
     }
+
+    lastScrollTopRef.current = currentTop;
   }, [disableAutoFollow]);
 
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
+    syncScrollTopRef(el);
 
-    const onWheel = (e: WheelEvent) => stopFromUserInput(el, e.target);
-    const onTouchMove = (e: TouchEvent) => stopFromUserInput(el, e.target);
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY >= 0) return;
+      stopFromUserScrollUp(el, e.target);
+    };
     const onPointerDown = (e: PointerEvent) => {
       if (isScrollbarPointer(el, e)) {
-        markUserScroll();
+        disableAutoFollow();
       }
     };
     const onKeyDown = (e: KeyboardEvent) => {
-      const scrollKeys = ["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "];
-      if (scrollKeys.includes(e.key)) stopFromUserInput(el, e.target);
+      const scrollUpKeys = ["ArrowUp", "PageUp", "Home"];
+      if (scrollUpKeys.includes(e.key)) stopFromUserScrollUp(el, e.target);
     };
 
     const opts: AddEventListenerOptions = { passive: true, capture: true };
     el.addEventListener("wheel", onWheel, opts);
-    el.addEventListener("touchmove", onTouchMove, opts);
     el.addEventListener("pointerdown", onPointerDown, opts);
     el.addEventListener("keydown", onKeyDown, { capture: true });
     return () => {
       el.removeEventListener("wheel", onWheel, opts);
-      el.removeEventListener("touchmove", onTouchMove, opts);
       el.removeEventListener("pointerdown", onPointerDown, opts);
       el.removeEventListener("keydown", onKeyDown, { capture: true });
     };
-  }, [markUserScroll, stopFromUserInput]);
+  }, [disableAutoFollow, stopFromUserScrollUp, syncScrollTopRef]);
 
   useEffect(() => {
     if (followLive && !prevFollowLiveRef.current) {
