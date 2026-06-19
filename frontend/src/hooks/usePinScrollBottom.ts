@@ -2,6 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 /** Show jump/latest button when roughly near bottom. */
 const BOTTOM_THRESHOLD = 48;
+/** Ease toward bottom each frame during live follow (higher = snappier). */
+const SCROLL_EASE = 0.22;
+/** Snap when within this many px of target. */
+const SCROLL_SNAP_PX = 1.5;
 
 function distanceFromBottom(el: HTMLElement): number {
   return el.scrollHeight - el.scrollTop - el.clientHeight;
@@ -47,6 +51,7 @@ export function usePinScrollBottom(
   const autoFollowRef = useRef(true);
   const programmaticRef = useRef(false);
   const programmaticRafRef = useRef(0);
+  const smoothScrollRafRef = useRef(0);
   const userScrollRef = useRef(false);
   const prevFollowLiveRef = useRef(followLive);
   const prevResetKeyRef = useRef<number | null>(null);
@@ -61,15 +66,16 @@ export function usePinScrollBottom(
     }
   }, []);
 
-  const disableAutoFollow = useCallback(() => {
-    autoFollowRef.current = false;
-    setIsAutoFollow(false);
-    userScrollRef.current = false;
-    clearProgrammatic();
-  }, [clearProgrammatic]);
+  const stopSmoothScroll = useCallback(() => {
+    if (smoothScrollRafRef.current) {
+      cancelAnimationFrame(smoothScrollRafRef.current);
+      smoothScrollRafRef.current = 0;
+    }
+  }, []);
 
-  const scrollToBottom = useCallback((el: HTMLElement) => {
+  const scrollToBottomInstant = useCallback((el: HTMLElement) => {
     if (!autoFollowRef.current) return;
+    stopSmoothScroll();
     clearProgrammatic();
     programmaticRef.current = true;
     el.scrollTop = el.scrollHeight;
@@ -79,7 +85,47 @@ export function usePinScrollBottom(
         programmaticRef.current = false;
       });
     });
-  }, [clearProgrammatic]);
+  }, [clearProgrammatic, stopSmoothScroll]);
+
+  const scrollToBottomSmooth = useCallback((el: HTMLElement) => {
+    if (!autoFollowRef.current) return;
+    if (smoothScrollRafRef.current) return;
+
+    const tick = () => {
+      if (!autoFollowRef.current) {
+        smoothScrollRafRef.current = 0;
+        programmaticRef.current = false;
+        return;
+      }
+
+      programmaticRef.current = true;
+      const target = Math.max(0, el.scrollHeight - el.clientHeight);
+      const current = el.scrollTop;
+      const dist = target - current;
+
+      if (dist <= SCROLL_SNAP_PX) {
+        el.scrollTop = target;
+        programmaticRef.current = false;
+        smoothScrollRafRef.current = 0;
+        setIsAtBottom(distanceFromBottom(el) <= BOTTOM_THRESHOLD);
+        return;
+      }
+
+      el.scrollTop = current + dist * SCROLL_EASE;
+      setIsAtBottom(distanceFromBottom(el) <= BOTTOM_THRESHOLD);
+      smoothScrollRafRef.current = requestAnimationFrame(tick);
+    };
+
+    smoothScrollRafRef.current = requestAnimationFrame(tick);
+  }, []);
+
+  const disableAutoFollow = useCallback(() => {
+    autoFollowRef.current = false;
+    setIsAutoFollow(false);
+    userScrollRef.current = false;
+    stopSmoothScroll();
+    clearProgrammatic();
+  }, [clearProgrammatic, stopSmoothScroll]);
 
   const enableAutoFollow = useCallback(() => {
     autoFollowRef.current = true;
@@ -87,12 +133,12 @@ export function usePinScrollBottom(
     userScrollRef.current = false;
     const el = scrollRef.current;
     if (el) {
-      scrollToBottom(el);
+      scrollToBottomInstant(el);
       setIsAtBottom(distanceFromBottom(el) <= BOTTOM_THRESHOLD);
     } else {
       setIsAtBottom(true);
     }
-  }, [scrollToBottom]);
+  }, [scrollToBottomInstant]);
 
   const jumpToBottom = useCallback(() => {
     enableAutoFollow();
@@ -102,9 +148,8 @@ export function usePinScrollBottom(
     if (!autoFollowRef.current) return;
     const el = scrollRef.current;
     if (!el) return;
-    scrollToBottom(el);
-    setIsAtBottom(distanceFromBottom(el) <= BOTTOM_THRESHOLD);
-  }, [scrollToBottom]);
+    scrollToBottomSmooth(el);
+  }, [scrollToBottomSmooth]);
 
   const markUserScroll = useCallback(() => {
     userScrollRef.current = true;
@@ -201,8 +246,9 @@ export function usePinScrollBottom(
     return () => {
       ro?.disconnect();
       mo.disconnect();
+      stopSmoothScroll();
     };
-  }, [followLive, followIfAuto]);
+  }, [followLive, followIfAuto, stopSmoothScroll]);
 
   return {
     scrollRef,
