@@ -13,6 +13,7 @@
 #   GIT_BRANCH=main
 #   SKIP_SSH=1          # skip SSH key generation / github.com test
 #   SKIP_DEPS=1         # skip mac_setup.sh after pull
+#   FRESH_RESET=1       # git reset --hard + clean -fdx before restore (drops stale local scripts)
 
 set -euo pipefail
 
@@ -138,9 +139,59 @@ backup_deploy_runtime() {
   backup_path "agent_config.toml"
   backup_path "workspaces"
   backup_path ".arion"
-  backup_path ".run"
+  if [[ "${FRESH_RESET:-0}" != "1" ]]; then
+    backup_path ".run"
+  fi
   backup_path ".venv"
   backup_path "frontend/node_modules"
+}
+
+hard_fresh_git_trees() {
+  echo "[fresh] Resetting trees to origin/$GIT_BRANCH (tracked + untracked cruft removed)"
+  git -C "$ARION_DIR" fetch origin "$GIT_BRANCH"
+  git -C "$ARION_DIR" reset --hard "origin/$GIT_BRANCH"
+  git -C "$ARION_DIR" clean -fdx
+
+  git -C "$DEPLOY_DIR" fetch origin "$GIT_BRANCH"
+  git -C "$DEPLOY_DIR" reset --hard "origin/$GIT_BRANCH"
+  git -C "$DEPLOY_DIR" clean -fdx
+}
+
+ensure_deploy_config() {
+  local cfg="$DEPLOY_DIR/deploy.config"
+  if [[ -f "$cfg" ]]; then
+    return 0
+  fi
+  cp "$DEPLOY_DIR/deploy.config.example" "$cfg"
+  if [[ "$ROOT" == *ArionAgentProd* ]]; then
+    sed -i '' 's/^mode=dev/mode=prod/' "$cfg"
+  fi
+  echo "[fresh] Created deploy.config from example ($(grep '^mode=' "$cfg" || true))"
+}
+
+purge_stale_deploy_entries() {
+  local trash="$HOME/Desktop/to_be_deleted/$(basename "$ROOT")_deploy_cruft"
+  mkdir -p "$trash"
+  local removed=0
+  local name
+  for name in \
+    start_dev.sh start_dev.ps1 start_dev.bat start_dev.command \
+    stop_dev.sh stop_dev.ps1 stop_dev.bat stop_dev.command \
+    start_prod.sh start_prod.ps1 start_prod.bat start_prod.command \
+    stop_prod.sh stop_prod.ps1 stop_prod.bat stop_prod.command; do
+    if [[ -e "$DEPLOY_DIR/$name" ]]; then
+      mv "$DEPLOY_DIR/$name" "$trash/"
+      removed=$((removed + 1))
+    fi
+  done
+  if [[ -d "$DEPLOY_DIR/to_be_deleted" ]]; then
+    mv "$DEPLOY_DIR/to_be_deleted" "$trash/repo_to_be_deleted"
+    removed=$((removed + 1))
+  fi
+  find "$ROOT" -maxdepth 1 -type d -name '.runtime_backup_*' -exec rm -rf {} + 2>/dev/null || true
+  if [[ "$removed" -gt 0 ]]; then
+    echo "[fresh] Archived $removed stale deploy path(s) -> $trash"
+  fi
 }
 
 restore_deploy_runtime() {
@@ -170,9 +221,12 @@ restore_deploy_runtime() {
   restore_item "agent_config.toml"
   restore_item "workspaces"
   restore_item ".arion"
-  restore_item ".run"
+  if [[ "${FRESH_RESET:-0}" != "1" ]]; then
+    restore_item ".run"
+  fi
   restore_item ".venv"
   restore_item "frontend/node_modules"
+  ensure_deploy_config
 }
 
 pull_or_clone() {
@@ -236,8 +290,16 @@ main() {
   pull_or_clone "arion_agent" "$ARION_DIR" "$ARION_REPO"
   pull_or_clone "cross_platform_minimal_deploy" "$DEPLOY_DIR" "$DEPLOY_REPO"
 
+  if [[ "${FRESH_RESET:-0}" == "1" ]]; then
+    hard_fresh_git_trees
+  fi
+
   restore_deploy_runtime
   fix_scripts
+
+  if [[ "${FRESH_RESET:-0}" == "1" ]]; then
+    purge_stale_deploy_entries
+  fi
 
   if [[ "${SKIP_DEPS:-0}" != "1" && -x "$DEPLOY_DIR/mac_setup.sh" ]]; then
     echo "[deps] Running mac_setup.sh ..."
