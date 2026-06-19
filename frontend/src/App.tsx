@@ -70,8 +70,8 @@ export default function App() {
   const threadStatus = agentState?.threads?.[activeThreadId]?.status;
   const { toast, showToast } = useEventToasts(activeAgentId, activeThreadId, agentState);
   const rounds = useMemo(
-    () => attachTurnModels(groupIntoRounds(messages, threadActive), turnModels),
-    [messages, threadActive, turnModels],
+    () => attachTurnModels(groupIntoRounds(messages), turnModels),
+    [messages, turnModels],
   );
 
   const refreshAgents = useCallback(async () => {
@@ -142,8 +142,7 @@ export default function App() {
         setWrappingEnabled(t.wrapping_enabled);
       }
     }
-    const active = Boolean(agentState?.threads?.[activeThreadId]?.active);
-    const rs = groupIntoRounds(messages, active);
+    const rs = groupIntoRounds(messages);
     const keys = rs.map((r, i) => finalKeyForRound(r, i)).filter(Boolean) as string[];
 
     if (knownFinalKeysRef.current.size === 0 && keys.length) {

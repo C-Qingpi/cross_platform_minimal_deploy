@@ -27,13 +27,12 @@ function isInProgressAi(msg: Message): boolean {
 function splitActivityFinal(
   rest: Message[],
   isLast: boolean,
-  threadActive: boolean,
 ): Pick<ConversationRound, "activity" | "final"> {
   const aiIdx = lastAiIndex(rest);
   let final: Message | null = aiIdx !== undefined ? rest[aiIdx] : null;
   let activity = aiIdx !== undefined ? rest.filter((_, i) => i !== aiIdx) : [...rest];
 
-  if (final && isLast && (threadActive || isInProgressAi(final))) {
+  if (final && isLast && isInProgressAi(final)) {
     activity = [...activity, final];
     final = null;
   }
@@ -42,10 +41,7 @@ function splitActivityFinal(
 }
 
 /** Split checkpoint messages into user turns with activity vs final reply. */
-export function groupIntoRounds(
-  messages: Message[],
-  threadActive = false,
-): ConversationRound[] {
+export function groupIntoRounds(messages: Message[]): ConversationRound[] {
   const segments: Message[][] = [];
   const prefix: Message[] = [];
   let current: Message[] = [];
@@ -70,7 +66,6 @@ export function groupIntoRounds(
     const { activity, final } = splitActivityFinal(
       prefix,
       segments.length === 0,
-      threadActive,
     );
     rounds.push({
       human: null,
@@ -84,7 +79,7 @@ export function groupIntoRounds(
     const human = seg[0];
     const rest = seg.slice(1);
     const isLast = segIdx === segments.length - 1;
-    const { activity, final } = splitActivityFinal(rest, isLast, threadActive);
+    const { activity, final } = splitActivityFinal(rest, isLast);
     rounds.push({ human, activity, final });
   });
 

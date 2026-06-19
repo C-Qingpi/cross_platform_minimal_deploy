@@ -126,6 +126,13 @@ def _clear_stream_draft(workspace: Path, agent_id: str, thread_id: str) -> None:
     _stream_draft_path(workspace, agent_id, thread_id).unlink(missing_ok=True)
 
 
+def _write_stream_draft(path: Path, payload: dict[str, str]) -> None:
+    text = json.dumps(payload, ensure_ascii=False)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
 def _make_llm_stream_handler(agent_id: str, workspace: Path):
     draft_dir = workspace / ".arion" / "agents" / agent_id / "stream_draft"
 
@@ -133,20 +140,18 @@ def _make_llm_stream_handler(agent_id: str, workspace: Path):
         path = draft_dir / f"{ev.thread_id}.json"
         if ev.phase == "end":
             path.unlink(missing_ok=True)
+            path.with_suffix(path.suffix + ".tmp").unlink(missing_ok=True)
             return
         if ev.phase == "start":
             draft_dir.mkdir(parents=True, exist_ok=True)
             return
-        path.write_text(
-            json.dumps(
-                {
-                    "content": ev.content,
-                    "reasoning": ev.reasoning,
-                    "updated_at": datetime.now().isoformat(),
-                },
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
+        _write_stream_draft(
+            path,
+            {
+                "content": ev.content,
+                "reasoning": ev.reasoning,
+                "updated_at": datetime.now().isoformat(),
+            },
         )
 
     return handler

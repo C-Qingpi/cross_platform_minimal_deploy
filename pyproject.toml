@@ -1,6 +1,6 @@
 [project]
 name = "arion-agent-deploy"
-version = "0.4.4"
+version = "0.4.5"
 description = "Deployment infrastructure for the Arion agent system"
 readme = "README.md"
 license = { text = "MIT" }

@@ -43,7 +43,10 @@ class ArionReader:
         path = self._stream_draft_path(thread_id)
         if not path.exists():
             return None
-        return json.loads(path.read_text(encoding="utf-8-sig"))
+        text = path.read_text(encoding="utf-8-sig").strip()
+        if not text:
+            return None
+        return json.loads(text)
 
     def _message_key(self, msg: dict[str, Any]) -> str:
         mid = msg.get("id")
