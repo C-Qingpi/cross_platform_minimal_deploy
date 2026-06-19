@@ -1,3 +1,6 @@
+import type { EventsResponse, MessagesResponse } from "../types/api";
+import { CHAT_PAGE_SIZE } from "../types/api";
+
 const qs = (params: Record<string, string | undefined>) => {
   const p = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
@@ -6,6 +9,16 @@ const qs = (params: Record<string, string | undefined>) => {
   const s = p.toString();
   return s ? `?${s}` : "";
 };
+
+/** Parse a fetch response, throwing a descriptive error on non-OK status. */
+async function safeJson<T = unknown>(res: Response, fallback: string): Promise<T> {
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    const detail: string = body?.detail ?? fallback;
+    throw new Error(detail);
+  }
+  return res.json();
+}
 
 export interface FsRoot {
   name: string;
@@ -41,13 +54,13 @@ export async function browseDirectory(path: string): Promise<FsBrowseResult> {
 
 export async function fetchDefaultWorkspace(agentId: string): Promise<string> {
   const res = await fetch(`/api/fs/default-workspace${qs({ agent_id: agentId })}`);
-  const data = await res.json();
+  const data = await safeJson<{ path: string }>(res, "Failed to load default workspace");
   return data.path;
 }
 
 export async function fetchAgents() {
   const res = await fetch("/api/agents");
-  return res.json();
+  return safeJson(res, "Failed to load agents");
 }
 
 export async function createAgent(body: {
@@ -61,21 +74,22 @@ export async function createAgent(body: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+  if (!res.ok) {
+    const bodyParsed = await res.json().catch(() => ({}));
+    throw new Error(bodyParsed.detail || "Failed to create agent");
+  }
   return res.json();
 }
 
 export async function deleteAgent(agentId: string) {
   const res = await fetch(`/api/agents/${encodeURIComponent(agentId)}`, { method: "DELETE" });
-  return res.json();
+  return safeJson(res, "Failed to delete agent");
 }
 
 export async function fetchAgentState(agentId: string) {
   const res = await fetch(`/api/agent/state${qs({ agent_id: agentId })}`);
-  return res.json();
+  return safeJson(res, "Failed to load agent state");
 }
-
-import type { EventsResponse, MessagesResponse } from "../types/api";
-import { CHAT_PAGE_SIZE } from "../types/api";
 
 export async function fetchMessages(
   agentId: string,
@@ -91,7 +105,7 @@ export async function fetchMessages(
     params.before_index = String(options.beforeIndex);
   }
   const res = await fetch(`/api/messages${qs(params)}`);
-  return res.json();
+  return safeJson(res, "Failed to load messages");
 }
 
 export async function sendMessage(agentId: string, threadId: string, content: string) {
@@ -100,16 +114,12 @@ export async function sendMessage(agentId: string, threadId: string, content: st
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ content, thread_id: threadId }),
   });
-  return res.json();
+  return safeJson(res, "Failed to send message");
 }
 
 export async function stopChat(agentId: string, threadId: string) {
   const res = await fetch(`/api/agent/stop${qs({ agent_id: agentId, thread_id: threadId })}`, { method: "POST" });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || "Stop request failed");
-  }
-  return res.json();
+  return safeJson(res, "Stop request failed");
 }
 
 export async function switchModel(agentId: string, model: string, threadId?: string) {
@@ -118,12 +128,12 @@ export async function switchModel(agentId: string, model: string, threadId?: str
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ model, thread_id: threadId }),
   });
-  return res.json();
+  return safeJson(res, "Failed to switch model");
 }
 
 export async function fetchThreads(agentId: string) {
   const res = await fetch(`/api/threads${qs({ agent_id: agentId })}`);
-  return res.json();
+  return safeJson(res, "Failed to load threads");
 }
 
 export async function createThread(agentId: string, threadId: string, name?: string) {
@@ -132,14 +142,14 @@ export async function createThread(agentId: string, threadId: string, name?: str
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ thread_id: threadId, name }),
   });
-  return res.json();
+  return safeJson(res, "Failed to create thread");
 }
 
 export async function deleteThread(agentId: string, threadId: string) {
   const res = await fetch(`/api/threads/${encodeURIComponent(threadId)}${qs({ agent_id: agentId })}`, {
     method: "DELETE",
   });
-  return res.json();
+  return safeJson(res, "Failed to delete thread");
 }
 
 export async function fetchEvents(afterIndex = 0, agentId?: string): Promise<EventsResponse> {
@@ -148,17 +158,17 @@ export async function fetchEvents(afterIndex = 0, agentId?: string): Promise<Eve
   };
   if (agentId) params.agent_id = agentId;
   const res = await fetch(`/api/events${qs(params)}`);
-  return res.json();
+  return safeJson(res, "Failed to load events");
 }
 
 export async function setThreadWrapping(agentId: string, threadId: string, enabled: boolean) {
   const res = await fetch(`/api/thread/wrapping${qs({ agent_id: agentId, thread_id: threadId, enabled: String(enabled) })}`, {
     method: "POST",
   });
-  return res.json();
+  return safeJson(res, "Failed to set thread wrapping");
 }
 
 export async function fetchConfig() {
   const res = await fetch("/api/config");
-  return res.json();
+  return safeJson(res, "Failed to load config");
 }
