@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-/** Show jump/latest button when roughly near bottom. */
-const BOTTOM_THRESHOLD = 48;
 /** Snap when within this many px of target; also used to re-attach auto-follow at strict bottom. */
 const SCROLL_SNAP_PX = 1.5;
 /** Treat this many px of upward scrollTop as intentional user scroll-up. */
@@ -39,7 +37,7 @@ function isScrollbarPointer(el: HTMLElement, e: PointerEvent): boolean {
  *
  * Enable: jumpToBottom (scroll + attach), followLive rising edge, followResetKey,
  *   or user manually scrolls to strict bottom while detached (attach only, no jump).
- * Disable: any user scroll-up on THIS container (even 1px).
+ * Disable: explicit user scroll-up input (wheel/key/scrollbar/drag), not layout reflow.
  * While attached, content growth uses a single instant scroll-to-bottom path.
  */
 export function usePinScrollBottom(
@@ -51,9 +49,10 @@ export function usePinScrollBottom(
   const endRef = useRef<HTMLDivElement | null>(null);
   const autoFollowRef = useRef(true);
   const lastScrollTopRef = useRef(0);
+  const userScrollActiveRef = useRef(false);
+  const pinningRef = useRef(false);
   const prevFollowLiveRef = useRef(followLive);
   const prevResetKeyRef = useRef<number | null>(null);
-  const [isAtBottom, setIsAtBottom] = useState(true);
   const [isAutoFollow, setIsAutoFollow] = useState(true);
 
   const syncScrollTopRef = useCallback((el: HTMLElement) => {
@@ -63,18 +62,26 @@ export function usePinScrollBottom(
   const scrollToBottomInstant = useCallback(
     (el: HTMLElement) => {
       if (!autoFollowRef.current) return;
+      pinningRef.current = true;
       el.scrollTop = el.scrollHeight;
       syncScrollTopRef(el);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          pinningRef.current = false;
+        });
+      });
     },
     [syncScrollTopRef],
   );
 
   const disableAutoFollow = useCallback(() => {
+    if (!autoFollowRef.current) return;
     autoFollowRef.current = false;
     setIsAutoFollow(false);
   }, []);
 
   const attachAutoFollow = useCallback(() => {
+    if (autoFollowRef.current) return;
     autoFollowRef.current = true;
     setIsAutoFollow(true);
   }, []);
@@ -82,12 +89,7 @@ export function usePinScrollBottom(
   const enableAutoFollow = useCallback(() => {
     attachAutoFollow();
     const el = scrollRef.current;
-    if (el) {
-      scrollToBottomInstant(el);
-      setIsAtBottom(distanceFromBottom(el) <= BOTTOM_THRESHOLD);
-    } else {
-      setIsAtBottom(true);
-    }
+    if (el) scrollToBottomInstant(el);
   }, [attachAutoFollow, scrollToBottomInstant]);
 
   const jumpToBottom = useCallback(() => {
@@ -114,25 +116,33 @@ export function usePinScrollBottom(
     if (!el) return;
 
     const dist = distanceFromBottom(el);
-    setIsAtBottom(dist <= BOTTOM_THRESHOLD);
-
     const prevTop = lastScrollTopRef.current;
     const currentTop = el.scrollTop;
 
-    if (currentTop < prevTop - SCROLL_UP_EPSILON) {
+    if (pinningRef.current) {
+      lastScrollTopRef.current = currentTop;
+      return;
+    }
+
+    if (userScrollActiveRef.current && currentTop < prevTop - SCROLL_UP_EPSILON) {
       disableAutoFollow();
+      userScrollActiveRef.current = false;
     } else if (!autoFollowRef.current && dist <= SCROLL_SNAP_PX) {
       attachAutoFollow();
-      setIsAtBottom(true);
+      scrollToBottomInstant(el);
     }
 
     lastScrollTopRef.current = currentTop;
-  }, [attachAutoFollow, disableAutoFollow]);
+  }, [attachAutoFollow, disableAutoFollow, scrollToBottomInstant]);
 
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     syncScrollTopRef(el);
+
+    const clearUserScroll = () => {
+      userScrollActiveRef.current = false;
+    };
 
     const onWheel = (e: WheelEvent) => {
       if (e.deltaY >= 0) return;
@@ -141,21 +151,36 @@ export function usePinScrollBottom(
     const onPointerDown = (e: PointerEvent) => {
       if (isScrollbarPointer(el, e)) {
         disableAutoFollow();
+        return;
       }
+      userScrollActiveRef.current = true;
     };
     const onKeyDown = (e: KeyboardEvent) => {
       const scrollUpKeys = ["ArrowUp", "PageUp", "Home"];
       if (scrollUpKeys.includes(e.key)) stopFromUserScrollUp(el, e.target);
+    };
+    const onTouchStart = () => {
+      userScrollActiveRef.current = true;
     };
 
     const opts: AddEventListenerOptions = { passive: true, capture: true };
     el.addEventListener("wheel", onWheel, opts);
     el.addEventListener("pointerdown", onPointerDown, opts);
     el.addEventListener("keydown", onKeyDown, { capture: true });
+    el.addEventListener("touchstart", onTouchStart, opts);
+    window.addEventListener("pointerup", clearUserScroll);
+    window.addEventListener("pointercancel", clearUserScroll);
+    window.addEventListener("touchend", clearUserScroll);
+    window.addEventListener("touchcancel", clearUserScroll);
     return () => {
       el.removeEventListener("wheel", onWheel, opts);
       el.removeEventListener("pointerdown", onPointerDown, opts);
       el.removeEventListener("keydown", onKeyDown, { capture: true });
+      el.removeEventListener("touchstart", onTouchStart, opts);
+      window.removeEventListener("pointerup", clearUserScroll);
+      window.removeEventListener("pointercancel", clearUserScroll);
+      window.removeEventListener("touchend", clearUserScroll);
+      window.removeEventListener("touchcancel", clearUserScroll);
     };
   }, [disableAutoFollow, stopFromUserScrollUp, syncScrollTopRef]);
 
@@ -182,7 +207,6 @@ export function usePinScrollBottom(
     endRef,
     onScroll,
     jumpToBottom,
-    isAtBottom,
     isAutoFollow,
     notifyContentGrowth: followIfAuto,
     pinnedRef: autoFollowRef,

@@ -204,7 +204,7 @@ function AgentActivityBlock({
   const followLive = live || Boolean(streamDraft);
 
   // Inner activity panel scroll — separate auto-follow; shares followResetKey with outer on send.
-  const { scrollRef, endRef, onScroll, jumpToBottom, isAutoFollow, notifyContentGrowth } =
+  const { scrollRef, endRef, onScroll, jumpToBottom, isAutoFollow, notifyContentGrowth, pinnedRef } =
     usePinScrollBottom(
       followLive,
       [
@@ -218,7 +218,7 @@ function AgentActivityBlock({
 
   const onDraftReveal = () => {
     notifyContentGrowth();
-    if (live && isAutoFollow) onStreamGrowth?.();
+    if (live && pinnedRef.current) onStreamGrowth?.();
   };
 
   if (!activity.length && !streamDraft) return null;
@@ -240,25 +240,27 @@ function AgentActivityBlock({
             <span>{expanded ? "Collapse ▾" : "Expand ▸"}</span>
           </span>
         </button>
-        <div
-          ref={scrollRef}
-          onScroll={onScroll}
-          className={`relative overflow-x-hidden overflow-y-auto px-3 pb-3 pt-2 space-y-2 border-t border-slate-200/80 ${
-            expanded ? "max-h-[70vh]" : ACTIVITY_MAX_H
-          }`}
-        >
-          {activity.map((msg, i) => (
-            <ActivityMessage key={messageStableKey(msg, i)} msg={msg} />
-          ))}
-          {live && streamDraft && (
-            <StreamPreviewBlock draft={streamDraft} live={live} model={model} onReveal={onDraftReveal} />
-          )}
-          <div ref={endRef} />
+        <div className="relative border-t border-slate-200/80">
+          <div
+            ref={scrollRef}
+            onScroll={onScroll}
+            className={`overflow-x-hidden overflow-y-auto px-3 pb-3 pt-2 space-y-2 ${
+              expanded ? "max-h-[70vh]" : ACTIVITY_MAX_H
+            }`}
+          >
+            {activity.map((msg, i) => (
+              <ActivityMessage key={messageStableKey(msg, i)} msg={msg} />
+            ))}
+            {live && streamDraft && (
+              <StreamPreviewBlock draft={streamDraft} live={live} model={model} onReveal={onDraftReveal} />
+            )}
+            <div ref={endRef} />
+          </div>
           {!isAutoFollow ? (
             <button
               type="button"
               onClick={jumpToBottom}
-              className="sticky bottom-1 left-1/2 z-10 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600 shadow hover:bg-slate-50"
+              className="pointer-events-auto absolute bottom-2 left-1/2 z-10 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600 shadow hover:bg-slate-50"
             >
               Latest
             </button>
