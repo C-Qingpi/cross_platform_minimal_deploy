@@ -1,6 +1,6 @@
 [project]
 name = "arion-agent-deploy"
-version = "0.4.1"
+version = "0.4.2"
 description = "Deployment infrastructure for the Arion agent system"
 readme = "README.md"
 license = { text = "MIT" }
@@ -55,4 +55,4 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["backend*", "agent*", "deploy_logging*", "failure_watchdog*",
-           "config*", "agent_registry*", "push_terminal_bundle*"]
+           "config*", "agent_registry*"]

@@ -3,27 +3,28 @@
 # Preserves deploy runtime files (.env, agents.json, workspaces, .arion, .venv, etc.)
 #
 # Run on Mac:
-#   cd ~/Desktop/AgentLearning/cross_platform_minimal_deploy
-#   chmod +x mac_git_setup.sh
-#   ./mac_git_setup.sh
+#   cd ~/Desktop/ArionAgentProd/cross_platform_minimal_deploy
+#   ./scripts/mac/git_setup.sh
 #
 # Optional env:
-#   AGENTLEARNING_ROOT=~/Desktop/AgentLearning
+#   AGENTLEARNING_ROOT=~/Desktop/ArionAgentProd
 #   GITHUB_USER=C-Qingpi
 #   GIT_BRANCH=main
 #   SKIP_SSH=1          # skip SSH key generation / github.com test
-#   SKIP_DEPS=1         # skip mac_setup.sh after pull
+#   SKIP_DEPS=1         # skip scripts/mac/setup.sh after pull
 #   FRESH_RESET=1       # git reset --hard + clean -fdx before restore (drops stale local scripts)
 
 set -euo pipefail
 
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
-ROOT="${AGENTLEARNING_ROOT:-$HOME/Desktop/AgentLearning}"
+ROOT="${AGENTLEARNING_ROOT:-$HOME/Desktop/ArionAgentProd}"
 GITHUB_USER="${GITHUB_USER:-C-Qingpi}"
 GIT_BRANCH="${GIT_BRANCH:-main}"
 ARION_DIR="$ROOT/arion_agent"
 DEPLOY_DIR="$ROOT/cross_platform_minimal_deploy"
+MAC_SETUP="$DEPLOY_DIR/scripts/mac/setup.sh"
+MAC_GIT_SETUP="$DEPLOY_DIR/scripts/mac/git_setup.sh"
 ARION_REPO="git@github.com:${GITHUB_USER}/arion_agent.git"
 DEPLOY_REPO="git@github.com:${GITHUB_USER}/cross_platform_minimal_deploy.git"
 BACKUP_ROOT="$ROOT/.runtime_backup_$(date +%Y%m%d_%H%M%S)"
@@ -115,7 +116,7 @@ PY
   echo "-----"
   echo "  1. Copy the public key above"
   echo "  2. GitHub → Settings → SSH and GPG keys → New SSH key"
-  echo "  3. Re-run: ./mac_git_setup.sh"
+  echo "  3. Re-run: ./scripts/mac/git_setup.sh"
   exit 2
 }
 
@@ -251,8 +252,8 @@ pull_or_clone() {
 
 fix_scripts() {
   cd "$DEPLOY_DIR"
-  chmod +x start.sh stop.sh mac_setup.sh mac_git_setup.sh *.command 2>/dev/null || true
-  for f in start.sh stop.sh start.command stop.command setup.command mac_setup.sh mac_git_setup.sh; do
+  chmod +x start.sh stop.sh deploy_env.sh scripts/mac/setup.sh scripts/mac/git_setup.sh *.command 2>/dev/null || true
+  for f in start.sh stop.sh start.command stop.command setup.command scripts/mac/setup.sh scripts/mac/git_setup.sh; do
     [[ -f "$f" ]] && sed -i '' 's/\r$//' "$f" 2>/dev/null || true
   done
 }
@@ -260,14 +261,14 @@ fix_scripts() {
 verify_runtime() {
   echo "[verify] Runtime checks"
   [[ -f "$DEPLOY_DIR/.env" ]] && echo "  .env: OK" || echo "  .env: MISSING (copy from .env.example)"
-  [[ -f "$DEPLOY_DIR/agents.json" ]] && echo "  agents.json: OK" || echo "  agents.json: MISSING (create via UI or restore_mac_agents.py)"
+  [[ -f "$DEPLOY_DIR/agents.json" ]] && echo "  agents.json: OK" || echo "  agents.json: MISSING (create via UI or python scripts/mac/restore_agents.py)"
   if [[ -d "$DEPLOY_DIR/workspaces" ]]; then
     echo "  workspaces: OK ($(find "$DEPLOY_DIR/workspaces" -mindepth 1 -maxdepth 2 -type d 2>/dev/null | wc -l | tr -d ' ') dirs)"
   else
     echo "  workspaces: MISSING (will be created when agents run)"
   fi
   if grep -q 'E:\\\\' "$DEPLOY_DIR/agents.json" 2>/dev/null || grep -q 'E:/' "$DEPLOY_DIR/agents.json" 2>/dev/null; then
-    echo "  agents.json: WARN Windows paths — run scripts/restore_mac_agents.py"
+    echo "  agents.json: WARN Windows paths — run scripts/mac/restore_agents.py"
   fi
   git -C "$ARION_DIR" log -1 --oneline
   git -C "$DEPLOY_DIR" log -1 --oneline
@@ -291,15 +292,15 @@ main() {
     purge_stale_deploy_entries
   fi
 
-  if [[ "${SKIP_DEPS:-0}" != "1" && -x "$DEPLOY_DIR/mac_setup.sh" ]]; then
-    echo "[deps] Running mac_setup.sh ..."
-    bash "$DEPLOY_DIR/mac_setup.sh"
+  if [[ "${SKIP_DEPS:-0}" != "1" && -x "$MAC_SETUP" ]]; then
+    echo "[deps] Running scripts/mac/setup.sh ..."
+    bash "$MAC_SETUP"
   else
-    echo "[deps] Skipped mac_setup.sh (SKIP_DEPS=${SKIP_DEPS:-0})"
+    echo "[deps] Skipped scripts/mac/setup.sh (SKIP_DEPS=${SKIP_DEPS:-0})"
   fi
 
   if [[ "${FRESH_RESET:-0}" == "1" ]]; then
-    git -C "$DEPLOY_DIR" checkout -- deploy_env.sh mac_git_setup.sh mac_setup.sh setup.command 2>/dev/null || true
+    git -C "$DEPLOY_DIR" checkout -- deploy_env.sh scripts/mac/git_setup.sh scripts/mac/setup.sh setup.command 2>/dev/null || true
   fi
 
   verify_runtime

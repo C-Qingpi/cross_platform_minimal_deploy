@@ -11,7 +11,7 @@ from pathlib import Path
 
 import paramiko
 
-DEPLOY = Path(__file__).resolve().parents[1]
+DEPLOY = Path(__file__).resolve().parents[2]
 ARION = Path(os.environ.get("ARION_AGENT_ROOT", DEPLOY.parent / "arion_agent"))
 
 HOST = os.environ.get("MAC_HOST", "10.100.33.146")
@@ -61,8 +61,8 @@ tar -xzf "$HOME/Desktop/agentlearning-sync.tgz" -C "$ROOT"
 [[ -f "$ENV_BAK" ]] && cp "$ENV_BAK" "$ROOT/cross_platform_minimal_deploy/.env"
 [[ -f "$AGENTS_BAK" ]] && cp "$AGENTS_BAK" "$ROOT/cross_platform_minimal_deploy/agents.json"
 cd "$ROOT/cross_platform_minimal_deploy"
-chmod +x start.sh stop.sh mac_setup.sh *.command 2>/dev/null || true
-for f in start.sh stop.sh start.command stop.command setup.command mac_setup.sh; do
+chmod +x start.sh stop.sh scripts/mac/setup.sh scripts/mac/git_setup.sh *.command 2>/dev/null || true
+for f in start.sh stop.sh start.command stop.command setup.command scripts/mac/setup.sh scripts/mac/git_setup.sh; do
   sed -i '' 's/\\r$//' "$f" 2>/dev/null || true
 done
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"

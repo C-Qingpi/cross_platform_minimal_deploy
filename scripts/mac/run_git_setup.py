@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Upload mac_git_setup.sh to Mac and run it (password SSH from env)."""
+"""Upload scripts/mac/git_setup.sh to Mac and run it (password SSH from env)."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ from pathlib import Path
 
 import paramiko
 
-DEPLOY = Path(__file__).resolve().parents[1]
-SCRIPT = DEPLOY / "mac_git_setup.sh"
+DEPLOY = Path(__file__).resolve().parents[2]
+SCRIPT = DEPLOY / "scripts/mac/git_setup.sh"
 
 HOST = os.environ.get("MAC_HOST", "10.100.33.146")
 USER = os.environ.get("MAC_USER", "yongbo_mac")
@@ -26,7 +26,7 @@ def main() -> int:
         return 1
 
     remote_deploy = f"/Users/{USER}/{MAC_ROOT}/cross_platform_minimal_deploy"
-    remote_script = f"{remote_deploy}/mac_git_setup.sh"
+    remote_script = f"{remote_deploy}/scripts/mac/git_setup.sh"
 
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -62,7 +62,7 @@ def main() -> int:
         print(
             "\nGitHub SSH key was generated but not registered yet.\n"
             "Add the public key shown above at https://github.com/settings/keys\n"
-            "Then re-run: python scripts/run_mac_git_setup.py"
+            "Then re-run: python scripts/mac/run_git_setup.py"
         )
     return code
 

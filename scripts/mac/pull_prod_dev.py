@@ -5,14 +5,13 @@ Prod: ~/Desktop/ArionAgentProd/{arion_agent,cross_platform_minimal_deploy}
 Dev:  ~/Desktop/ArionAgentDev/{arion_agent,cross_platform_minimal_deploy}
 
 Preserves runtime files (.env, agents.json, workspaces, .arion, .venv, etc.)
-via mac_git_setup.sh backup/restore.
+via scripts/mac/git_setup.sh backup/restore.
 
 From Windows:
-  cd cross_platform_minimal_deploy
-  python scripts/pull_mac_prod_dev.py
-  python scripts/pull_mac_prod_dev.py --prod-only
-  python scripts/pull_mac_prod_dev.py --dev-only
-  python scripts/pull_mac_prod_dev.py --restart-prod
+  python scripts/mac/pull_prod_dev.py
+  python scripts/mac/pull_prod_dev.py --prod-only
+  python scripts/mac/pull_prod_dev.py --dev-only
+  python scripts/mac/pull_prod_dev.py --restart-prod
 """
 
 from __future__ import annotations
@@ -24,9 +23,9 @@ from pathlib import Path
 
 import paramiko
 
-DEPLOY = Path(__file__).resolve().parents[1]
-SETUP_SCRIPT = DEPLOY / "mac_git_setup.sh"
-MAC_SETUP_SCRIPT = DEPLOY / "mac_setup.sh"
+DEPLOY = Path(__file__).resolve().parents[2]
+SETUP_SCRIPT = DEPLOY / "scripts/mac/git_setup.sh"
+MAC_SETUP_SCRIPT = DEPLOY / "scripts/mac/setup.sh"
 
 HOST = os.environ.get("MAC_HOST", "10.100.33.146")
 USER = os.environ.get("MAC_USER", "yongbo_mac")
@@ -38,7 +37,7 @@ DEV_ROOT = os.environ.get("MAC_DEV_ROOT", "Desktop/ArionAgentDev")
 
 def _remote_git_pull(*, root: str, branch: str) -> str:
     home = f"/Users/{USER}"
-    remote_setup = f"{home}/{root}/cross_platform_minimal_deploy/mac_git_setup.sh"
+    remote_setup = f"{home}/{root}/cross_platform_minimal_deploy/scripts/mac/git_setup.sh"
     return f"""
 set -euo pipefail
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
@@ -52,7 +51,7 @@ git -C "{home}/{root}/cross_platform_minimal_deploy" log -1 --oneline
 
 def _remote_mac_setup(*, root: str) -> str:
     home = f"/Users/{USER}"
-    remote_mac_setup = f"{home}/{root}/cross_platform_minimal_deploy/mac_setup.sh"
+    remote_mac_setup = f"{home}/{root}/cross_platform_minimal_deploy/scripts/mac/setup.sh"
     return f"""
 set -euo pipefail
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
@@ -120,17 +119,22 @@ echo "PROD RESTART DONE (mode=$DEPLOY_MODE ports=$BACKEND_PORT/$FRONTEND_PORT)"
 
 def _upload_setup(sftp: paramiko.SFTPClient, root: str) -> None:
     remote_dir = f"/Users/{USER}/{root}/cross_platform_minimal_deploy"
-    remote_git_setup = f"{remote_dir}/mac_git_setup.sh"
-    remote_mac_setup = f"{remote_dir}/mac_setup.sh"
+    remote_git_setup = f"{remote_dir}/scripts/mac/git_setup.sh"
+    remote_mac_setup = f"{remote_dir}/scripts/mac/setup.sh"
     try:
         sftp.stat(remote_dir)
     except OSError:
         sftp.mkdir(f"/Users/{USER}/{root}")
         sftp.mkdir(remote_dir)
-    print(f"upload mac_git_setup.sh -> {remote_git_setup}")
+    for sub in ("scripts", "scripts/mac"):
+        try:
+            sftp.stat(f"{remote_dir}/{sub}")
+        except OSError:
+            sftp.mkdir(f"{remote_dir}/{sub}")
+    print(f"upload git_setup.sh -> {remote_git_setup}")
     sftp.put(str(SETUP_SCRIPT), remote_git_setup)
     if MAC_SETUP_SCRIPT.is_file():
-        print(f"upload mac_setup.sh -> {remote_mac_setup}")
+        print(f"upload setup.sh -> {remote_mac_setup}")
         sftp.put(str(MAC_SETUP_SCRIPT), remote_mac_setup)
 
 

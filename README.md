@@ -47,8 +47,8 @@ If the Mac was previously synced via tarball, switch to git without losing agent
 
 ```bash
 cd ~/Desktop/AgentLearning/cross_platform_minimal_deploy
-chmod +x mac_git_setup.sh
-./mac_git_setup.sh
+chmod +x scripts/mac/git_setup.sh
+./scripts/mac/git_setup.sh
 ```
 
 This script:
@@ -56,13 +56,20 @@ This script:
 1. Creates `~/.ssh/id_ed25519` if needed and prints the public key for [GitHub SSH keys](https://github.com/settings/keys)
 2. `git pull` (or clone) `C-Qingpi/arion_agent` and `C-Qingpi/cross_platform_minimal_deploy` side by side
 3. Restores runtime files: `.env`, `agents.json`, `agent_config.toml`, `workspaces/`, `.arion/`, `.venv/`, `frontend/node_modules/`
-4. Runs `mac_setup.sh` to refresh pip/npm deps
+4. Runs `scripts/mac/setup.sh` to refresh pip/npm deps
 
 From Windows (pushes script and runs over SSH):
 
 ```powershell
 cd cross_platform_minimal_deploy
-python scripts/run_mac_git_setup.py
+python scripts/mac/run_git_setup.py
+```
+
+Pull or fresh-reset Prod/Dev sibling checkouts on Mac:
+
+```powershell
+python scripts/mac/pull_prod_dev.py
+python scripts/mac/reset_fresh.py
 ```
 
 If exit code 2: add the printed SSH public key to GitHub, then re-run.
@@ -90,7 +97,7 @@ cp deploy.config.example deploy.config
 # ArionAgentProd checkout: mode=prod
 ```
 
-`setup.command` / `mac_setup.sh` creates `deploy.config` automatically if missing (Prod path gets `mode=prod`).
+`setup.command` / `scripts/mac/setup.sh` creates `deploy.config` automatically if missing (Prod path gets `mode=prod`).
 
 **Windows (PowerShell):**
 
@@ -111,7 +118,7 @@ Open the URL printed by start (ports come from `deploy.config`).
 
 **Dev mode** (`mode=dev`) enables optional `semantic_search` middleware (background index at `{workspace}/.arion/index/`). Setup installs `arion-agent[deepseek,search]` for dev checkouts only.
 
-> **After a `git pull` that adds new optional extras** (e.g. `[search]`), re-run `setup.command` (macOS) or `mac_setup.sh` on dev checkouts to refresh the venv.
+> **After a `git pull` that adds new optional extras** (e.g. `[search]`), re-run `setup.command` (macOS) or `scripts/mac/setup.sh` on dev checkouts to refresh the venv.
 
 Smoke tests:
 
@@ -126,6 +133,24 @@ Processes (defaults from `deploy.config`):
 |------|---------|----------|-----------------|
 | dev  | 8920    | 5174     | yes             |
 | prod | 8921    | 5175     | no              |
+
+## Scripts layout
+
+Repo root keeps only deploy entry points (`start.*`, `stop.*`, `deploy.config*`, core Python modules).
+
+| Path | Purpose |
+|------|---------|
+| `scripts/mac/setup.sh` | Mac deps + venv refresh |
+| `scripts/mac/git_setup.sh` | Mac git pull/clone + runtime restore |
+| `scripts/mac/run_git_setup.py` | Upload and run git_setup from Windows |
+| `scripts/mac/pull_prod_dev.py` | Pull Prod (main) + Dev (dev) on Mac |
+| `scripts/mac/reset_fresh.py` | Hard reset Mac checkouts, preserve agent data |
+| `scripts/mac/restore_agents.py` | Fix agents.json after bad sync |
+| `scripts/mac/diag/` | SSH diagnostics (semantic search, etc.) |
+| `scripts/legacy/` | Old tarball/sync helpers (deprecated) |
+| `scripts/repro/` | One-off reproduction scripts |
+| `tests/integration/test_jobs_behaviors.py` | Terminal job behavior tests |
+| `tests/run_terminal.*` | Run integration tests (Windows / Mac / Linux) |
 
 ## Configuration
 

@@ -2,9 +2,9 @@
 
 Runs direct JobRegistry checks and an agent turn that uses the shell job tools.
 Usage:
-  python test_jobs_behaviors.py
-  python test_jobs_behaviors.py --direct-only
-  python test_jobs_behaviors.py --agent-only
+  python tests/integration/test_jobs_behaviors.py
+  python tests/integration/test_jobs_behaviors.py --direct-only
+  python tests/integration/test_jobs_behaviors.py --agent-only
 """
 
 from __future__ import annotations
@@ -20,8 +20,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEPLOY_DIR = SCRIPT_DIR.parent
+DEPLOY_DIR = SCRIPT_DIR.parents[1]
 sys.path.insert(0, str(DEPLOY_DIR))
+sys.path.insert(0, str(DEPLOY_DIR / "agent"))
 
 load_dotenv(DEPLOY_DIR / ".env")
 if not os.environ.get("DEPLOY_ROOT", "").strip():

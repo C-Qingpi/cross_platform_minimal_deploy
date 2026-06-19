@@ -10,5 +10,4 @@ echo "platform: $(uname -s) $(uname -m)"
 pip install -e ../arion_agent -q
 pip install -r requirements.txt -q
 
-cd agent
-python test_jobs_behaviors.py "$@"
+python tests/integration/test_jobs_behaviors.py "$@"

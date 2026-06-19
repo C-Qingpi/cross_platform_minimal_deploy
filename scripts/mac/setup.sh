@@ -5,10 +5,10 @@ export PATH="$HOME/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bi
 export UV_INDEX_URL="${UV_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}"
 export npm_config_registry="${npm_config_registry:-https://registry.npmmirror.com}"
 
-DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 STACK_ROOT="$(cd "$DEPLOY_DIR/.." && pwd)"
 ARION_DIR="$STACK_ROOT/arion_agent"
-# shellcheck source=deploy_env.sh
+# shellcheck source=../../deploy_env.sh
 source "$DEPLOY_DIR/deploy_env.sh"
 
 if [[ ! -f "$DEPLOY_DIR/deploy.config" ]]; then
@@ -95,7 +95,7 @@ cd "$DEPLOY_DIR/frontend"
 npm install --loglevel info
 
 cd "$DEPLOY_DIR"
-chmod +x start.sh stop.sh deploy_env.sh start.command stop.command setup.command mac_setup.sh 2>/dev/null || true
+chmod +x start.sh stop.sh deploy_env.sh start.command stop.command setup.command scripts/mac/setup.sh scripts/mac/git_setup.sh 2>/dev/null || true
 chmod +x start.sh stop.sh
 
 if [[ ! -f .env ]]; then

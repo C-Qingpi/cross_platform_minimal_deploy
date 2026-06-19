@@ -6,7 +6,7 @@
 #
 # Usage (Mac):
 #   cd ~/Desktop/AgentLearning
-#   ./cross_platform_minimal_deploy/sync_from_git.sh
+#   ./cross_platform_minimal_deploy/scripts/legacy/sync_from_git.sh
 #
 # Env overrides:
 #   AGENT_LEARNING_ROOT  default: ~/Desktop/AgentLearning
@@ -14,12 +14,12 @@
 #   AGENT_GIT_BRANCH     default: main
 #
 # First-time Mac setup (GitHub SSH key):
-#   ./cross_platform_minimal_deploy/setup_mac_git.sh
+#   ./cross_platform_minimal_deploy/scripts/legacy/setup_mac_git.sh
 #   add printed key at https://github.com/settings/keys
-#   ./cross_platform_minimal_deploy/sync_from_git.sh
+#   ./cross_platform_minimal_deploy/scripts/legacy/sync_from_git.sh
 #
 # LAN fallback (no GitHub auth on Mac): run from Windows/WSL
-#   ./cross_platform_minimal_deploy/push_terminal_bundle.sh
+#   ./cross_platform_minimal_deploy/scripts/legacy/push_terminal_bundle.sh
 
 set -euo pipefail
 
@@ -32,12 +32,12 @@ TERMINAL_PATHS=(
   arion_agent/pyproject.toml
   arion_agent/tests/test_jobs.py
   arion_agent/tests/test_wait_tool.py
-  cross_platform_minimal_deploy/agent/test_jobs_behaviors.py
-  cross_platform_minimal_deploy/run_terminal_tests.sh
-  cross_platform_minimal_deploy/run_terminal_tests.ps1
-  cross_platform_minimal_deploy/sync_from_git.sh
-  cross_platform_minimal_deploy/setup_mac_git.sh
-  cross_platform_minimal_deploy/push_terminal_bundle.sh
+  cross_platform_minimal_deploy/tests/integration/test_jobs_behaviors.py
+  cross_platform_minimal_deploy/tests/run_terminal.sh
+  cross_platform_minimal_deploy/tests/run_terminal.ps1
+  cross_platform_minimal_deploy/scripts/legacy/sync_from_git.sh
+  cross_platform_minimal_deploy/scripts/legacy/setup_mac_git.sh
+  cross_platform_minimal_deploy/scripts/legacy/push_terminal_bundle.sh
 )
 
 cd "$ROOT"

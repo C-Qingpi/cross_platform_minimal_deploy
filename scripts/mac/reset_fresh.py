@@ -8,10 +8,10 @@ Uses mac_git_setup.sh with FRESH_RESET=1:
   run mac_setup.sh
 
 From Windows:
-  python scripts/reset_mac_fresh.py
-  python scripts/reset_mac_fresh.py --prod-only
-  python scripts/reset_mac_fresh.py --dev-only
-  python scripts/reset_mac_fresh.py --skip-deps
+  python scripts/mac/reset_fresh.py
+  python scripts/mac/reset_fresh.py --prod-only
+  python scripts/mac/reset_fresh.py --dev-only
+  python scripts/mac/reset_fresh.py --skip-deps
 """
 
 from __future__ import annotations
@@ -23,9 +23,8 @@ from pathlib import Path
 
 import paramiko
 
-DEPLOY = Path(__file__).resolve().parents[1]
-SETUP_SCRIPT = DEPLOY / "mac_git_setup.sh"
-MAC_SETUP_SCRIPT = DEPLOY / "mac_setup.sh"
+DEPLOY = Path(__file__).resolve().parents[2]
+SETUP_SCRIPT = DEPLOY / "scripts/mac/git_setup.sh"
 
 HOST = os.environ.get("MAC_HOST", "10.100.33.146")
 USER = os.environ.get("MAC_USER", "yongbo_mac")

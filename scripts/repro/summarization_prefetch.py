@@ -4,8 +4,8 @@ Phase 1: deterministic registry simulation (no API).
 Phase 2: live agent with deepseek:deepseek_v4_flash (needs DEEPSEEK_API_KEY).
 
 Usage (from cross_platform_minimal_deploy):
-  python scripts/repro_summarization_prefetch.py --live-only --prefetch 12 --trigger 28
-  python scripts/repro_summarization_prefetch.py --live-only --preload 26 --rounds 3
+  python scripts/repro/summarization_prefetch.py --live-only --prefetch 12 --trigger 28
+  python scripts/repro/summarization_prefetch.py --live-only --preload 26 --rounds 3
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-DEPLOY_DIR = Path(__file__).resolve().parent.parent
+DEPLOY_DIR = Path(__file__).resolve().parents[2]
 ARION_DIR = DEPLOY_DIR.parent / "arion_agent"
 sys.path.insert(0, str(DEPLOY_DIR))
 sys.path.insert(0, str(ARION_DIR))

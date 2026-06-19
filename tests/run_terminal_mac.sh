@@ -19,8 +19,7 @@ cd "$ROOT/arion_agent"
 cd "$ROOT/cross_platform_minimal_deploy"
 "$UV" pip install -r requirements.txt --python "$PY" -q
 
-cd agent
-"$PY" test_jobs_behaviors.py --direct-only
-"$PY" test_jobs_behaviors.py --agent-only
+"$PY" tests/integration/test_jobs_behaviors.py --direct-only
+"$PY" tests/integration/test_jobs_behaviors.py --agent-only
 
 echo "=== Mac all job tests PASS ==="

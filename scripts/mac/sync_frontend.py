@@ -11,7 +11,7 @@ from pathlib import Path
 
 import paramiko
 
-REPO = Path(__file__).resolve().parents[1] / "frontend"
+REPO = Path(__file__).resolve().parents[2] / "frontend"
 HOST = os.environ.get("MAC_HOST", "10.100.33.146")
 USER = os.environ.get("MAC_USER", "yongbo_mac")
 PASSWORD = os.environ.get("MAC_PASS", "19991112")

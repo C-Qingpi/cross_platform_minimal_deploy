@@ -9,8 +9,8 @@ from pathlib import Path
 
 import paramiko
 
-DEPLOY = Path(__file__).resolve().parents[1]
-SCRIPT = DEPLOY / "mac_git_setup.sh"
+DEPLOY = Path(__file__).resolve().parents[2]
+SCRIPT = DEPLOY / "scripts/mac/git_setup.sh"
 
 HOST = os.environ.get("MAC_HOST", "10.100.33.146")
 USER = os.environ.get("MAC_USER", "yongbo_mac")
@@ -28,13 +28,13 @@ cd frontend
 npm install --silent
 cd "$DEPLOY"
 test -f frontend/package.json && echo "frontend/package.json: OK"
-AGENTLEARNING_ROOT="$ROOT" SKIP_SSH=1 bash mac_git_setup.sh
+AGENTLEARNING_ROOT="$ROOT" SKIP_SSH=1 bash scripts/mac/git_setup.sh
 """
 
 
 def main() -> int:
     remote_deploy = f"/Users/{USER}/{MAC_ROOT}/cross_platform_minimal_deploy"
-    remote_script = f"{remote_deploy}/mac_git_setup.sh"
+    remote_script = f"{remote_deploy}/scripts/mac/git_setup.sh"
 
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
