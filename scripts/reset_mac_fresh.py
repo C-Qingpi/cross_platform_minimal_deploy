@@ -37,34 +37,27 @@ DEV_ROOT = os.environ.get("MAC_DEV_ROOT", "Desktop/ArionAgentDev")
 
 def _remote_fresh(*, root: str, branch: str, skip_deps: bool) -> str:
     home = f"/Users/{USER}"
-    remote_setup = f"{home}/{root}/cross_platform_minimal_deploy/mac_git_setup.sh"
     skip_deps_flag = "1" if skip_deps else "0"
     return f"""
 set -euo pipefail
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-mkdir -p "{home}/{root}/cross_platform_minimal_deploy"
-chmod +x "{remote_setup}"
-AGENTLEARNING_ROOT="{home}/{root}" GIT_BRANCH="{branch}" SKIP_SSH=1 SKIP_DEPS={skip_deps_flag} FRESH_RESET=1 bash "{remote_setup}"
+TMP_SETUP="/tmp/arion_mac_git_setup_{root.replace('/', '_')}.sh"
+chmod +x "$TMP_SETUP"
+AGENTLEARNING_ROOT="{home}/{root}" GIT_BRANCH="{branch}" SKIP_SSH=1 SKIP_DEPS={skip_deps_flag} FRESH_RESET=1 bash "$TMP_SETUP"
 echo "=== verify {root} ==="
 D="{home}/{root}/cross_platform_minimal_deploy"
 git -C "$D" status --short
 git -C "$D" log -1 --oneline
 ls "$D"/start.sh "$D"/stop.sh "$D"/start.command "$D"/stop.command 2>/dev/null
+test ! -e "$D/start_prod.sh" && test ! -e "$D/start_dev.sh" && echo "no stale start_prod/dev scripts"
 test -f "$D/agents.json" && echo "agents.json OK" || echo "agents.json missing"
 test -f "$D/deploy.config" && grep '^mode=' "$D/deploy.config" || echo "deploy.config missing"
 """
 
 
 def _upload_setup(sftp: paramiko.SFTPClient, root: str) -> None:
-    remote_dir = f"/Users/{USER}/{root}/cross_platform_minimal_deploy"
-    try:
-        sftp.stat(remote_dir)
-    except OSError:
-        sftp.mkdir(f"/Users/{USER}/{root}")
-        sftp.mkdir(remote_dir)
-    sftp.put(str(SETUP_SCRIPT), f"{remote_dir}/mac_git_setup.sh")
-    if MAC_SETUP_SCRIPT.is_file():
-        sftp.put(str(MAC_SETUP_SCRIPT), f"{remote_dir}/mac_setup.sh")
+    tmp = f"/tmp/arion_mac_git_setup_{root.replace('/', '_')}.sh"
+    sftp.put(str(SETUP_SCRIPT), tmp)
 
 
 def _run(client: paramiko.SSHClient, script: str, *, timeout: int = 1800) -> tuple[int, str, str]:

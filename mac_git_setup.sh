@@ -146,17 +146,6 @@ backup_deploy_runtime() {
   backup_path "frontend/node_modules"
 }
 
-hard_fresh_git_trees() {
-  echo "[fresh] Resetting trees to origin/$GIT_BRANCH (tracked + untracked cruft removed)"
-  git -C "$ARION_DIR" fetch origin "$GIT_BRANCH"
-  git -C "$ARION_DIR" reset --hard "origin/$GIT_BRANCH"
-  git -C "$ARION_DIR" clean -fdx
-
-  git -C "$DEPLOY_DIR" fetch origin "$GIT_BRANCH"
-  git -C "$DEPLOY_DIR" reset --hard "origin/$GIT_BRANCH"
-  git -C "$DEPLOY_DIR" clean -fdx
-}
-
 ensure_deploy_config() {
   local cfg="$DEPLOY_DIR/deploy.config"
   if [[ -f "$cfg" ]]; then
@@ -241,7 +230,12 @@ pull_or_clone() {
     git -C "$dir" remote set-url origin "$repo"
     git -C "$dir" fetch origin "$GIT_BRANCH"
     git -C "$dir" checkout "$GIT_BRANCH"
-    git -C "$dir" pull --ff-only origin "$GIT_BRANCH"
+    if [[ "${FRESH_RESET:-0}" == "1" ]]; then
+      git -C "$dir" reset --hard "origin/$GIT_BRANCH"
+      git -C "$dir" clean -fdx
+    else
+      git -C "$dir" pull --ff-only origin "$GIT_BRANCH"
+    fi
     return 0
   fi
 
@@ -290,10 +284,6 @@ main() {
   pull_or_clone "arion_agent" "$ARION_DIR" "$ARION_REPO"
   pull_or_clone "cross_platform_minimal_deploy" "$DEPLOY_DIR" "$DEPLOY_REPO"
 
-  if [[ "${FRESH_RESET:-0}" == "1" ]]; then
-    hard_fresh_git_trees
-  fi
-
   restore_deploy_runtime
   fix_scripts
 
@@ -306,6 +296,10 @@ main() {
     bash "$DEPLOY_DIR/mac_setup.sh"
   else
     echo "[deps] Skipped mac_setup.sh (SKIP_DEPS=${SKIP_DEPS:-0})"
+  fi
+
+  if [[ "${FRESH_RESET:-0}" == "1" ]]; then
+    git -C "$DEPLOY_DIR" checkout -- deploy_env.sh mac_git_setup.sh mac_setup.sh setup.command 2>/dev/null || true
   fi
 
   verify_runtime
