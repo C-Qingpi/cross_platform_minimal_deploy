@@ -8,6 +8,18 @@ export npm_config_registry="${npm_config_registry:-https://registry.npmmirror.co
 DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STACK_ROOT="$(cd "$DEPLOY_DIR/.." && pwd)"
 ARION_DIR="$STACK_ROOT/arion_agent"
+# shellcheck source=deploy_env.sh
+source "$DEPLOY_DIR/deploy_env.sh"
+
+if [[ ! -f "$DEPLOY_DIR/deploy.config" ]]; then
+  cp "$DEPLOY_DIR/deploy.config.example" "$DEPLOY_DIR/deploy.config"
+  if [[ "$DEPLOY_DIR" == *ArionAgentProd* ]]; then
+    sed -i '' 's/^mode=dev/mode=prod/' "$DEPLOY_DIR/deploy.config"
+  fi
+  echo "Created deploy.config — verify mode=dev or mode=prod for this checkout"
+fi
+deploy_env_load "$DEPLOY_DIR"
+echo "Setup mode: $DEPLOY_MODE (root=$DEPLOY_ROOT)"
 PY="$HOME/.local/bin/python3.12"
 UV="$HOME/.local/bin/uv"
 VENV="$DEPLOY_DIR/.venv"
@@ -67,7 +79,12 @@ VPY="$VENV/bin/python"
 
 echo "[1/3] Installing arion_agent (may take several minutes) ..."
 cd "$ARION_DIR"
-"$UV" pip install -v -e ".[deepseek,search]" --python "$VPY"
+if [[ "$DEPLOY_MODE" == "dev" ]]; then
+  ARION_EXTRAS="deepseek,search"
+else
+  ARION_EXTRAS="deepseek"
+fi
+"$UV" pip install -v -e ".[$ARION_EXTRAS]" --python "$VPY"
 
 echo "[2/3] Installing deploy backend deps (from pyproject.toml) ..."
 cd "$DEPLOY_DIR"
@@ -77,16 +94,8 @@ echo "[3/3] Installing frontend deps ..."
 cd "$DEPLOY_DIR/frontend"
 npm install --loglevel info
 
-echo "[4/4] Pre-downloading semantic search embedding model (BAAI/bge-small-en-v1.5) ..."
-"$VPY" -c "
-from fastembed import TextEmbedding
-print('  Downloading embedding model to HuggingFace cache (~/.cache/huggingface/) ...')
-TextEmbedding(model_name='BAAI/bge-small-en-v1.5')
-print('  Embedding model ready (shared across all agent runners).')
-"
-
 cd "$DEPLOY_DIR"
-chmod +x start.sh stop.sh start.command stop.command setup.command mac_setup.sh 2>/dev/null || true
+chmod +x start.sh stop.sh deploy_env.sh start.command stop.command setup.command mac_setup.sh 2>/dev/null || true
 chmod +x start.sh stop.sh
 
 if [[ ! -f .env ]]; then

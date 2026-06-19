@@ -2,6 +2,10 @@
 set -eu
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
+# shellcheck source=deploy_env.sh
+source "$ROOT/deploy_env.sh"
+deploy_env_load "$ROOT"
+
 RUN_DIR="$ROOT/.run"
 mkdir -p "$RUN_DIR"
 
@@ -10,11 +14,7 @@ if [[ ! -f .env ]]; then
   echo "Created .env - set DEEPSEEK_API_KEY"
 fi
 
-export DEPLOY_ROOT="${DEPLOY_ROOT:-$ROOT}"
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:$PATH"
-BACKEND_PORT=8921
-FRONTEND_PORT=5175
-export BACKEND_PORT FRONTEND_PORT
 
 if [[ -x "$ROOT/.venv/bin/python" ]]; then
   PYTHON="$ROOT/.venv/bin/python"
@@ -26,12 +26,12 @@ else
   PYTHON=python
 fi
 
-echo "Starting backend on :$BACKEND_PORT ..."
+echo "Starting ${DEPLOY_MODE} deploy (root=$DEPLOY_ROOT) backend :$BACKEND_PORT ..."
 (cd backend && exec "$PYTHON" -m uvicorn main:app --host 127.0.0.1 --port "$BACKEND_PORT") &
 echo $! > "$RUN_DIR/backend.pid"
 
 sleep 2
-echo "Starting agent runner ..."
+echo "Starting agent runner (mode=$DEPLOY_MODE) ..."
 (cd agent && exec "$PYTHON" agent_runner.py) &
 echo $! > "$RUN_DIR/agent.pid"
 

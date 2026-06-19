@@ -1,9 +1,12 @@
 # Stop only this deploy's backend, agent runner, and frontend (by saved PIDs).
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
+. "$Root\deploy_env.ps1"
+Import-DeployEnv -Root $Root
+
 $RunDir = Join-Path $Root ".run"
-$BackendPort = if ($env:BACKEND_PORT) { [int]$env:BACKEND_PORT } else { 8921 }
-$FrontendPort = if ($env:FRONTEND_PORT) { [int]$env:FRONTEND_PORT } else { 5175 }
+$BackendPort = [int]$env:BACKEND_PORT
+$FrontendPort = [int]$env:FRONTEND_PORT
 
 function Stop-SavedPid {
     param([string]$Name, [string]$PidFile)
@@ -47,6 +50,7 @@ function Stop-PortIfOurs {
     }
 }
 
+Write-Host "Stopping $env:DEPLOY_MODE deploy (ports $BackendPort / $FrontendPort) ..."
 New-Item -ItemType Directory -Force -Path $RunDir | Out-Null
 Stop-SavedPid "backend" (Join-Path $RunDir "backend.pid")
 Stop-SavedPid "agent runner" (Join-Path $RunDir "agent.pid")

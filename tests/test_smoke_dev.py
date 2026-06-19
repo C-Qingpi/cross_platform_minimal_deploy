@@ -21,6 +21,9 @@ SMOKE_WS = DEPLOY_DIR / "tests" / "_smoke_workspace"
 @pytest.fixture(autouse=True)
 def _clean_env(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv("ARION_DEPLOY_MODE", raising=False)
+    cfg = DEPLOY_DIR / "deploy.config"
+    if not cfg.is_file():
+        shutil.copy(DEPLOY_DIR / "deploy.config.example", cfg)
     if SMOKE_WS.exists():
         shutil.rmtree(SMOKE_WS, ignore_errors=True)
     SMOKE_WS.mkdir(parents=True, exist_ok=True)

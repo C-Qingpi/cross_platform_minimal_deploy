@@ -1,6 +1,6 @@
 .env
+deploy.config
 agent_config.toml
-.venv/
 .run/
 *.pid
 .arion/

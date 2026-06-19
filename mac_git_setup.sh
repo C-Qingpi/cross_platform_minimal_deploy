@@ -133,6 +133,7 @@ backup_deploy_runtime() {
   }
 
   backup_path ".env"
+  backup_path "deploy.config"
   backup_path "agents.json"
   backup_path "agent_config.toml"
   backup_path "workspaces"
@@ -164,6 +165,7 @@ restore_deploy_runtime() {
   }
 
   restore_item ".env"
+  restore_item "deploy.config"
   restore_item "agents.json"
   restore_item "agent_config.toml"
   restore_item "workspaces"

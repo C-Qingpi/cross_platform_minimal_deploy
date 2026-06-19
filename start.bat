@@ -2,30 +2,36 @@
 setlocal enabledelayedexpansion
 
 set "ROOT=%~dp0"
-set "RUN_DIR=%ROOT%.run"
+set "ROOT=%ROOT:~0,-1%"
+set "RUN_DIR=%ROOT%\.run"
 if not exist "%RUN_DIR%" mkdir "%RUN_DIR%"
 
-set "BACKEND_PORT=8921"
-set "FRONTEND_PORT=5175"
+set "PY=%ROOT%\.venv\Scripts\python.exe"
+if not exist "%PY%" set "PY=python"
 
-echo Starting backend on :%BACKEND_PORT% ...
-start "backend" cmd /c "cd /d "%ROOT%backend" && "%ROOT%.venv\Scripts\python" -m uvicorn main:app --host 127.0.0.1 --port %BACKEND_PORT%"
-echo %ERRORLEVEL% > "%RUN_DIR%backend.pid"
+for /f "delims=" %%i in ('"%PY%" "%ROOT%\deploy_config.py" --emit-cmd') do %%i
+if errorlevel 1 (
+  echo ERROR: missing deploy.config — copy deploy.config.example and set mode=dev or mode=prod
+  pause
+  exit /b 1
+)
+
+echo Starting %DEPLOY_MODE% deploy backend :%BACKEND_PORT% ...
+start "backend" cmd /c "cd /d "%ROOT%\backend" && "%PY%" -m uvicorn main:app --host 127.0.0.1 --port %BACKEND_PORT%"
 
 timeout /t 3 /nobreak >nul
 echo Starting agent runner ...
-start "agent-runner" cmd /c "cd /d "%ROOT%agent" && "%ROOT%.venv\Scripts\python" agent_runner.py"
+start "agent-runner" cmd /c "cd /d "%ROOT%\agent" && "%PY%" agent_runner.py"
 
 timeout /t 1 /nobreak >nul
 echo Starting frontend on http://localhost:%FRONTEND_PORT% ...
-if not exist "%ROOT%frontend\node_modules" (
-  cd /d "%ROOT%frontend"
+if not exist "%ROOT%\frontend\node_modules" (
+  cd /d "%ROOT%\frontend"
   call npm install
 )
-start "frontend" cmd /c "cd /d "%ROOT%frontend" && npm run dev -- --host 127.0.0.1 --port %FRONTEND_PORT%"
+start "frontend" cmd /c "cd /d "%ROOT%\frontend" && set BACKEND_PORT=%BACKEND_PORT% && set FRONTEND_PORT=%FRONTEND_PORT% && npm run dev -- --host 127.0.0.1 --port %FRONTEND_PORT%"
 
 echo.
-echo PIDs saved under .run/ - logs under .run/logs/
 echo Open http://localhost:%FRONTEND_PORT%
 echo.
 pause

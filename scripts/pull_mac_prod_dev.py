@@ -69,6 +69,8 @@ PYTHON="$ROOT/.venv/bin/python"
 LOG_DIR="$ROOT/.run/logs"
 cd "$ROOT"
 mkdir -p .run "$LOG_DIR"
+source "$ROOT/deploy_env.sh"
+deploy_env_load "$ROOT"
 
 stop_port() {{
   PORT="$1"
@@ -100,19 +102,19 @@ for pid in $(pgrep -f agent_runner.py 2>/dev/null || true); do
   kill "$pid" 2>/dev/null || true
 done
 
-stop_port 8920
-stop_port 5174
+stop_port "$BACKEND_PORT"
+stop_port "$FRONTEND_PORT"
 
 nohup caffeinate -dims "$PYTHON" agent/agent_runner.py >>"$LOG_DIR/agent.stdout.log" 2>&1 &
 echo $! > "$ROOT/.run/agent.pid"
 sleep 2
-nohup caffeinate -dims "$PYTHON" -m uvicorn main:app --host 0.0.0.0 --port 8920 --app-dir "$ROOT/backend" >>"$LOG_DIR/backend.stdout.log" 2>&1 &
+nohup caffeinate -dims "$PYTHON" -m uvicorn main:app --host 0.0.0.0 --port "$BACKEND_PORT" --app-dir "$ROOT/backend" >>"$LOG_DIR/backend.stdout.log" 2>&1 &
 echo $! > "$ROOT/.run/backend.pid"
 sleep 2
 cd "$ROOT/frontend"
-nohup npm run dev -- --host 0.0.0.0 --port 5174 >>"$LOG_DIR/frontend.stdout.log" 2>&1 &
+nohup npm run dev -- --host 0.0.0.0 --port "$FRONTEND_PORT" >>"$LOG_DIR/frontend.stdout.log" 2>&1 &
 echo $! > "$ROOT/.run/frontend.pid"
-echo "PROD RESTART DONE"
+echo "PROD RESTART DONE (mode=$DEPLOY_MODE ports=$BACKEND_PORT/$FRONTEND_PORT)"
 """
 
 

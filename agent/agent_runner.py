@@ -24,6 +24,10 @@ sys.path.insert(0, str(DEPLOY_DIR))
 
 load_dotenv(DEPLOY_DIR / ".env")
 
+from deploy_config import apply_runtime_env
+
+_runtime_cfg = apply_runtime_env(DEPLOY_DIR)
+
 from deploy_logging import install_signal_logging, setup_service_logging
 from failure_watchdog import init as init_failure_watchdog
 from agent_registry import AgentRegistry, default_thread_id
@@ -33,7 +37,7 @@ import agent_events as events
 from arion_agent.util.streaming import LlmStreamUpdate
 from prompts import DEFAULT_DEEPMEMORY, DEFAULT_SOUL, WORKFLOW_METHODOLOGY, wrap_user_message
 
-DEPLOY_ROOT = Path(os.environ.get("DEPLOY_ROOT", str(DEPLOY_DIR)))
+DEPLOY_ROOT = _runtime_cfg.deploy_root
 setup_service_logging("agent", DEPLOY_ROOT)
 init_failure_watchdog(DEPLOY_ROOT, service="agent")
 install_signal_logging("agent")

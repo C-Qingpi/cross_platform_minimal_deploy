@@ -2,10 +2,11 @@
 # Stop only this deploy's backend, agent runner, and frontend (by saved PIDs).
 set -eu
 ROOT="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=deploy_env.sh
+source "$ROOT/deploy_env.sh"
+deploy_env_load "$ROOT"
+
 RUN_DIR="$ROOT/.run"
-BACKEND_PORT=8921
-FRONTEND_PORT=5175
-export BACKEND_PORT FRONTEND_PORT
 
 stop_pid() {
   local name="$1"
@@ -75,6 +76,7 @@ stop_port_if_ours() {
   done
 }
 
+echo "Stopping ${DEPLOY_MODE} deploy (ports $BACKEND_PORT / $FRONTEND_PORT) ..."
 mkdir -p "$RUN_DIR"
 stop_pid "backend" "$RUN_DIR/backend.pid"
 stop_pid "agent runner" "$RUN_DIR/agent.pid"

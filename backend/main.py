@@ -31,12 +31,16 @@ from message_queue import MessageQueue
 
 load_dotenv(DEPLOY_DIR / ".env")
 
-DEPLOY_ROOT = Path(os.environ.get("DEPLOY_ROOT", str(DEPLOY_DIR)))
+from deploy_config import apply_runtime_env
+
+_runtime_cfg = apply_runtime_env(DEPLOY_DIR)
+
+DEPLOY_ROOT = _runtime_cfg.deploy_root
 setup_service_logging("backend", DEPLOY_ROOT)
 
 logger = logging.getLogger("minimal-backend")
 
-BACKEND_PORT = int(os.environ.get("BACKEND_PORT", "8920"))
+BACKEND_PORT = _runtime_cfg.backend_port
 
 registry = AgentRegistry(DEPLOY_ROOT)
 events_file = DEPLOY_ROOT / ".arion" / "events.jsonl"

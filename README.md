@@ -82,6 +82,16 @@ cd frontend && npm install && cd ..
 
 ## Run
 
+First-time setup per checkout:
+
+```bash
+cp deploy.config.example deploy.config
+# ArionAgentDev checkout: mode=dev
+# ArionAgentProd checkout: mode=prod
+```
+
+`setup.command` / `mac_setup.sh` creates `deploy.config` automatically if missing (Prod path gets `mode=prod`).
+
 **Windows (PowerShell):**
 
 ```powershell
@@ -91,35 +101,36 @@ cd frontend && npm install && cd ..
 **macOS / Linux:**
 
 ```bash
-chmod +x start.sh stop.sh
+chmod +x start.sh stop.sh deploy_env.sh
 ./start.sh
 ```
 
-On macOS you can also double-click **`start.command`** / **`stop.command`** in Finder (runs in Terminal). First-time setup: double-click **`setup.command`**.
+On macOS you can also double-click **`start.command`** / **`stop.command`** in Finder. First-time setup: double-click **`setup.command`**.
 
-Open http://localhost:5174
+Open the URL printed by start (ports come from `deploy.config`).
 
-**Dev-only:** `start_dev.*` sets `ARION_DEPLOY_MODE=dev`, which enables optional `semantic_search` middleware (background index at `{workspace}/.arion/index/`). Install with editable arion_agent including search extras: `pip install -e ../arion_agent[deepseek,search]`.
+**Dev mode** (`mode=dev`) enables optional `semantic_search` middleware (background index at `{workspace}/.arion/index/`). Setup installs `arion-agent[deepseek,search]` for dev checkouts only.
 
-> **After a `git pull` that adds new optional extras** (e.g. `[search]`), re-run `setup.command` (macOS) or `mac_setup.sh` to refresh the venv. The setup script already installs `arion-agent[deepseek,search]` — a stale editable install won't have the new extras until it's rebuilt.
+> **After a `git pull` that adds new optional extras** (e.g. `[search]`), re-run `setup.command` (macOS) or `mac_setup.sh` on dev checkouts to refresh the venv.
 
 Smoke tests:
 
 ```bash
-python -m pytest tests/test_smoke_dev.py -v
+python -m pytest tests/test_smoke_dev.py tests/test_deploy_config.py -v
 python agent/agent_runner.py --test-resume
 ```
 
-Processes:
+Processes (defaults from `deploy.config`):
 
-| Service | Port (default) |
-|---------|----------------|
-| Backend | 8920 |
-| Frontend | 5174 |
+| mode | Backend | Frontend | semantic_search |
+|------|---------|----------|-----------------|
+| dev  | 8920    | 5174     | yes             |
+| prod | 8921    | 5175     | no              |
 
 ## Configuration
 
-- `.env` — `DEEPSEEK_API_KEY`, `DEPLOY_ROOT`, ports
+- `deploy.config` — **per checkout**: `mode=dev|prod`, optional port overrides. `DEPLOY_ROOT` is always this folder (never set in `.env`).
+- `.env` — secrets only: `DEEPSEEK_API_KEY`, `DEFAULT_MODEL`
 - `agent_config.toml` — model default and provider keys (auto-seeded from `.env`)
 
 Model string format: `provider:model_id`
