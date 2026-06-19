@@ -61,7 +61,13 @@ class ArionReader:
         for line in path.read_text(encoding="utf-8-sig").splitlines():
             line = line.strip()
             if line:
-                messages.append(json.loads(line))
+                try:
+                    messages.append(json.loads(line))
+                except json.JSONDecodeError:
+                    logger.warning(
+                        "Skipping malformed display log line in %s/%s: %s",
+                        thread_id, path.name, line[:80],
+                    )
         return messages
 
     def _write_display_log(self, thread_id: str, messages: list[dict[str, Any]]) -> None:
