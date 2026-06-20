@@ -13,22 +13,6 @@ function distanceFromBottom(el: HTMLElement): number {
   return el.scrollHeight - el.scrollTop - el.clientHeight;
 }
 
-function isScrollableY(node: HTMLElement): boolean {
-  if (node.scrollHeight <= node.clientHeight) return false;
-  const oy = getComputedStyle(node).overflowY;
-  return oy === "auto" || oy === "scroll" || oy === "overlay";
-}
-
-/** Wheel/scroll on a nested overflow panel should not affect this container. */
-function nestedScrollableBetween(el: HTMLElement, target: EventTarget | null): HTMLElement | null {
-  let node = target instanceof Node ? target : null;
-  while (node && node !== el) {
-    if (node instanceof HTMLElement && isScrollableY(node)) return node;
-    node = node.parentNode;
-  }
-  return null;
-}
-
 /**
  * Auto-follow is pure state — only attachAutoFollow / disableAutoFollow change it.
  *
@@ -137,8 +121,11 @@ export function usePinScrollBottom(
   }, [animateToBottom]);
 
   const stopFromUserScrollUp = useCallback(
-    (el: HTMLElement, target: EventTarget | null) => {
-      if (nestedScrollableBetween(el, target)) return;
+    () => {
+      // Intentionally NOT checking nestedScrollableBetween — user control must
+      // always win. Any upward wheel / touch move immediately disables auto-follow
+      // and cancels the animation, even if the event target is inside a nested
+      // scrollable like a code block.
       disableAutoFollow();
     },
     [disableAutoFollow],
@@ -174,11 +161,11 @@ export function usePinScrollBottom(
     const onWheel = (e: WheelEvent) => {
       if (e.deltaY >= 0) return;
       lastUserScrollRef.current = Date.now();
-      stopFromUserScrollUp(el, e.target);
+      stopFromUserScrollUp();
     };
-    const onTouchMove = (e: TouchEvent) => {
+    const onTouchMove = () => {
       lastUserScrollRef.current = Date.now();
-      stopFromUserScrollUp(el, e.target);
+      stopFromUserScrollUp();
     };
 
     const opts: AddEventListenerOptions = { passive: true, capture: true };
