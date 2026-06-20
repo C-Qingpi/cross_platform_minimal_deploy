@@ -34,7 +34,8 @@ function nestedScrollableBetween(el: HTMLElement, target: EventTarget | null): H
  *
  * Enable: jumpToBottom (scroll + attach), followLive rising edge, followResetKey,
  *   or user scrolls to strict bottom while detached.
- * Disable: explicit upward input (wheel up or touch pan), not layout reflow.
+ * Disable: any user-initiated scroll away from the bottom (wheel up, touch-pan,
+ *   scrollbar drag, keyboard page-up, spacebar, etc.), not layout reflow.
  * The animation layer never changes attached state and is cancelled by detach.
  */
 export function usePinScrollBottom(
@@ -55,6 +56,10 @@ export function usePinScrollBottom(
     cancelAnimationFrame(animationRef.current);
     animationRef.current = 0;
   }, []);
+
+  /** Timestamp of last user-initiated scroll (wheel, touch, scrollbar, keyboard, etc.).
+   *  Used to prevent instant jumps that would fight recent user interaction. */
+  const lastUserScrollRef = useRef(0);
 
   const animateToBottom = useCallback(
     (el: HTMLElement) => {
@@ -77,7 +82,9 @@ export function usePinScrollBottom(
         }
 
         // Large distance → jump instantly so the user isn't waiting for animation.
-        if (dist > LARGE_DISTANCE_PX) {
+        // Skip the instant jump if the user interacted recently (gives them a chance
+        // to cancel via wheel/touch before being yanked back).
+        if (dist > LARGE_DISTANCE_PX && Date.now() - lastUserScrollRef.current > 500) {
           el.scrollTop = target;
           animationRef.current = 0;
           return;
@@ -135,11 +142,23 @@ export function usePinScrollBottom(
     const el = scrollRef.current;
     if (!el) return;
 
-    if (!autoFollowRef.current && distanceFromBottom(el) <= SCROLL_SNAP_PX) {
+    const dfb = distanceFromBottom(el);
+
+    // Any user-initiated scroll away from bottom → detach (covers scrollbar drag,
+    // keyboard page-up, spacebar, arrow keys, etc., not just wheel/touch).
+    // Don't detach if we're in the middle of our own animation.
+    if (!animationRef.current && autoFollowRef.current && dfb > SCROLL_SNAP_PX) {
+      lastUserScrollRef.current = Date.now();
+      disableAutoFollow();
+      return;
+    }
+
+    // User scrolled to strict bottom while detached → re-attach.
+    if (!autoFollowRef.current && dfb <= SCROLL_SNAP_PX) {
       attachAutoFollow();
       stopAnimation();
     }
-  }, [attachAutoFollow, stopAnimation]);
+  }, [attachAutoFollow, disableAutoFollow, stopAnimation]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -147,9 +166,11 @@ export function usePinScrollBottom(
 
     const onWheel = (e: WheelEvent) => {
       if (e.deltaY >= 0) return;
+      lastUserScrollRef.current = Date.now();
       stopFromUserScrollUp(el, e.target);
     };
     const onTouchMove = (e: TouchEvent) => {
+      lastUserScrollRef.current = Date.now();
       stopFromUserScrollUp(el, e.target);
     };
 
