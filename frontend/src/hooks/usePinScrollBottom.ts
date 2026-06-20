@@ -34,8 +34,9 @@ function nestedScrollableBetween(el: HTMLElement, target: EventTarget | null): H
  *
  * Enable: jumpToBottom (scroll + attach), followLive rising edge, followResetKey,
  *   or user scrolls to strict bottom while detached.
- * Disable: any user-initiated scroll away from the bottom (wheel up, touch-pan,
- *   scrollbar drag, keyboard page-up, spacebar, etc.), not layout reflow.
+ * Disable: wheel-up, touch-pan, or scrollbar drag (detected via pointerdown on
+ *   the container element itself, not on a child). Keyboard-initiated scrolls
+ *   that reach the bottom will re-attach.
  * The animation layer never changes attached state and is cancelled by detach.
  */
 export function usePinScrollBottom(
@@ -60,6 +61,11 @@ export function usePinScrollBottom(
   /** Timestamp of last user-initiated scroll (wheel, touch, scrollbar, keyboard, etc.).
    *  Used to prevent instant jumps that would fight recent user interaction. */
   const lastUserScrollRef = useRef(0);
+
+  /** Set when pointerdown fires directly on the scroll container (not a child).
+   *  Cleared by the next onScroll that uses it. This detects scrollbar drag uniquely:
+   *  only scrollbar clicks land on the container itself, not on content children. */
+  const pointerDownOnContainerRef = useRef(false);
 
   const animateToBottom = useCallback(
     (el: HTMLElement) => {
@@ -144,10 +150,11 @@ export function usePinScrollBottom(
 
     const dfb = distanceFromBottom(el);
 
-    // Any user-initiated scroll away from bottom → detach (covers scrollbar drag,
-    // keyboard page-up, spacebar, arrow keys, etc., not just wheel/touch).
-    // Don't detach if we're in the middle of our own animation.
-    if (!animationRef.current && autoFollowRef.current && dfb > SCROLL_SNAP_PX) {
+    // Scrollbar drag: a pointerdown directly on the container (not on a child)
+    // means the user interacted with the scrollbar. The scroll that follows is
+    // user-initiated → detach. Animation never sets pointerDownOnContainerRef.
+    if (autoFollowRef.current && dfb > SCROLL_SNAP_PX && pointerDownOnContainerRef.current) {
+      pointerDownOnContainerRef.current = false;
       lastUserScrollRef.current = Date.now();
       disableAutoFollow();
       return;
@@ -183,6 +190,21 @@ export function usePinScrollBottom(
       stopAnimation();
     };
   }, [disableAutoFollow, stopAnimation, stopFromUserScrollUp]);
+
+  /** Detect scrollbar drag: pointerdown directly on the container (not a child element)
+   *  means the user clicked the scrollbar track or thumb. The flag is consumed by onScroll
+   *  on the next scroll event, which detaches auto-follow. */
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.target === el) {
+        pointerDownOnContainerRef.current = true;
+      }
+    };
+    el.addEventListener("pointerdown", onPointerDown, true);
+    return () => el.removeEventListener("pointerdown", onPointerDown, true);
+  }, []);
 
   useEffect(() => {
     if (followLive && !prevFollowLiveRef.current) {
