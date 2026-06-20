@@ -13,6 +13,8 @@
 #   SKIP_SSH=1          # skip SSH key generation / github.com test
 #   SKIP_DEPS=1         # skip scripts/mac/setup.sh after pull
 #   FRESH_RESET=1       # git reset --hard + clean -fdx before restore (drops stale local scripts)
+#   AUTO_STASH=1        # stash all local changes (incl. untracked) before sync (pull_setup default)
+#   FORCE_SYNC=1        # fetch + reset --hard origin/$GIT_BRANCH after stash (pull_setup default)
 
 set -euo pipefail
 
@@ -219,6 +221,47 @@ restore_deploy_runtime() {
   ensure_deploy_config
 }
 
+stash_local_changes() {
+  local dir="$1"
+  local name="$2"
+
+  if [[ ! -d "$dir/.git" ]]; then
+    return 0
+  fi
+  if [[ "${AUTO_STASH:-0}" != "1" ]]; then
+    return 0
+  fi
+  if [[ -z "$(git -C "$dir" status --porcelain)" ]]; then
+    return 0
+  fi
+
+  local msg="pull_setup auto-stash $(date +%Y%m%d_%H%M%S) [$name]"
+  echo "[git] $name: stashing local changes — $msg"
+  git -C "$dir" stash push -u -m "$msg"
+}
+
+sync_repo_to_remote() {
+  local name="$1"
+  local dir="$2"
+  local repo="$3"
+
+  git -C "$dir" remote set-url origin "$repo"
+  git -C "$dir" fetch origin "$GIT_BRANCH"
+  git -C "$dir" checkout "$GIT_BRANCH"
+  if [[ "${FRESH_RESET:-0}" == "1" ]]; then
+    git -C "$dir" reset --hard "origin/$GIT_BRANCH"
+    git -C "$dir" clean -fdx
+    return 0
+  fi
+  if [[ "${FORCE_SYNC:-0}" == "1" ]]; then
+    echo "[git] $name: force-sync to origin/$GIT_BRANCH"
+    git -C "$dir" reset --hard "origin/$GIT_BRANCH"
+    git -C "$dir" clean -fd
+    return 0
+  fi
+  git -C "$dir" pull --ff-only origin "$GIT_BRANCH"
+}
+
 pull_or_clone() {
   local name="$1"
   local dir="$2"
@@ -228,15 +271,8 @@ pull_or_clone() {
 
   if [[ -d "$dir/.git" ]]; then
     echo "[git] Pull $name"
-    git -C "$dir" remote set-url origin "$repo"
-    git -C "$dir" fetch origin "$GIT_BRANCH"
-    git -C "$dir" checkout "$GIT_BRANCH"
-    if [[ "${FRESH_RESET:-0}" == "1" ]]; then
-      git -C "$dir" reset --hard "origin/$GIT_BRANCH"
-      git -C "$dir" clean -fdx
-    else
-      git -C "$dir" pull --ff-only origin "$GIT_BRANCH"
-    fi
+    stash_local_changes "$dir" "$name"
+    sync_repo_to_remote "$name" "$dir" "$repo"
     return 0
   fi
 

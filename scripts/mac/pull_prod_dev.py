@@ -43,7 +43,7 @@ set -euo pipefail
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 mkdir -p "{home}/{root}/cross_platform_minimal_deploy"
 chmod +x "{remote_setup}"
-AGENTLEARNING_ROOT="{home}/{root}" GIT_BRANCH="{branch}" SKIP_SSH=1 SKIP_DEPS=1 bash "{remote_setup}"
+AGENTLEARNING_ROOT="{home}/{root}" GIT_BRANCH="{branch}" SKIP_SSH=1 SKIP_DEPS=1 AUTO_STASH=1 FORCE_SYNC=1 bash "{remote_setup}"
 git -C "{home}/{root}/arion_agent" log -1 --oneline
 git -C "{home}/{root}/cross_platform_minimal_deploy" log -1 --oneline
 """
