@@ -64,3 +64,25 @@ def test_arion_core_exports_prefetch():
         assert "compress_node" in cfg
         assert STANDARD_PREFETCH_POLICY is not None
         assert STANDARD_POLICY is not None
+
+
+def test_deploy_message_count_summarization_policy():
+    from agent_runner import _deploy_summarization_config
+    from arion_agent.summarization.compress import evaluate_policy, evaluate_prefetch_policy
+    from arion_agent.summarization.config import SummarizationPolicy
+    from langchain_core.messages import HumanMessage
+
+    policy = _deploy_summarization_config().policy
+    assert isinstance(policy, SummarizationPolicy)
+    assert policy.prefetch_messages == 150
+    assert policy.trigger_messages == 225
+    assert policy.keep_messages == 50
+
+    msgs = lambda n: [HumanMessage(content=f"h{i}") for i in range(n)]
+
+    assert evaluate_prefetch_policy(policy, msgs(150), 0, None) is None
+    assert evaluate_prefetch_policy(policy, msgs(151), 0, None) is not None
+    assert evaluate_policy(policy, msgs(225), 0, None) is None
+    decision = evaluate_policy(policy, msgs(226), 0, None)
+    assert decision is not None
+    assert decision.keep_last_messages == 50

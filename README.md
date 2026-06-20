@@ -188,7 +188,7 @@ Mounts appear under `workspace/imported_directories/{name}/`.
 | Soul / memory | `STANDARD_SOUL`, `STANDARD_DEEPMEMORY` |
 | System prompt | arion `BASE_ARION_PROMPT` + `STANDARD_SOUL` / `STANDARD_DEEPMEMORY` |
 | User messages | pass-through (no deploy wrapper) |
-| Summarization | proactive prefetch apply in headroom zone + hard compress fallback (STANDARD_POLICY) |
+| Summarization | message-count: prefetch >150, hard >225, keep 50 |
 | Subagents | disabled |
 | File + shell | enabled |
 | Planning | disabled |

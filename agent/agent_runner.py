@@ -157,12 +157,16 @@ def _make_llm_stream_handler(agent_id: str, workspace: Path):
     return handler
 
 
-# Known model context windows (tokens).
-# Keys are model specs as passed to create_arion_agent.
-# Add entries here as new models are integrated.
-_MODEL_CONTEXT_WINDOWS: dict[str, int] = {
-    "deepseek:deepseek_v4_flash": 1048565,
-}
+def _deploy_summarization_config():
+    from arion_agent.summarization.config import SummarizationConfig, SummarizationPolicy
+
+    return SummarizationConfig(
+        policy=SummarizationPolicy(
+            prefetch_messages=150,
+            trigger_messages=225,
+            keep_messages=50,
+        ),
+    )
 
 
 def _is_dev_deploy() -> bool:
@@ -196,7 +200,6 @@ def _warm_dev_search_indexers() -> None:
 
 def create_agent_instance(agent_id: str, model_spec: str) -> object:
     from arion_agent import create_arion_agent
-    from arion_agent.summarization.config import SummarizationConfig, SummarizationPolicy
 
     info = registry.get_agent(agent_id)
     if info is None:
@@ -204,23 +207,6 @@ def create_agent_instance(agent_id: str, model_spec: str) -> object:
 
     workspace = Path(info["workspace"])
     mounts = _build_mounts(agent_id)
-
-    model_max_tokens = _MODEL_CONTEXT_WINDOWS.get(model_spec)
-    if model_max_tokens is not None:
-        summarization = SummarizationConfig(
-            policy=SummarizationPolicy(
-                trigger_fraction=0.85,
-                keep_fraction=0.25,
-            ),
-            max_tokens=model_max_tokens,
-        )
-    else:
-        summarization = SummarizationConfig(
-            policy=SummarizationPolicy(
-                trigger_messages=165,
-                keep_messages=40,
-            ),
-        )
 
     return create_arion_agent(
         model=model_spec,
@@ -230,7 +216,7 @@ def create_agent_instance(agent_id: str, model_spec: str) -> object:
         deep_memory=DEFAULT_DEEPMEMORY,
         pinned_instructions=WORKFLOW_METHODOLOGY,
         subagents=None,
-        summarization=summarization,
+        summarization=_deploy_summarization_config(),
         planning=False,
         mounts=mounts if mounts else None,
         confinement="none",
