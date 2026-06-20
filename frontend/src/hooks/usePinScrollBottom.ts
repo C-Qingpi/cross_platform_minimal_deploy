@@ -46,10 +46,12 @@ export function usePinScrollBottom(
    *  Used to prevent instant jumps that would fight recent user interaction. */
   const lastUserScrollRef = useRef(0);
 
-  /** Set when pointerdown fires directly on the scroll container (not a child).
-   *  Cleared by the next onScroll that uses it. This detects scrollbar drag uniquely:
-   *  only scrollbar clicks land on the container itself, not on content children. */
-  const pointerDownOnContainerRef = useRef(false);
+  /** True only during the synchronous execution of the animation tick function — specifically
+   *  during `el.scrollTop` assignments. Used by onScroll to distinguish animation-propagated
+   *  scroll events from real user-initiated ones (keyboard, middle-click, scrollbar arrows, etc.).
+   *  This is a synchronous flag, not async, so there is no race: the scroll event from
+   *  `el.scrollTop += step` fires synchronously while this is true. */
+  const isAnimationTickRef = useRef(false);
 
   const animateToBottom = useCallback(
     (el: HTMLElement) => {
@@ -66,7 +68,9 @@ export function usePinScrollBottom(
         const dist = target - el.scrollTop;
 
         if (dist <= SCROLL_SNAP_PX) {
+          isAnimationTickRef.current = true;
           el.scrollTop = target;
+          isAnimationTickRef.current = false;
           animationRef.current = 0;
           return;
         }
@@ -75,13 +79,17 @@ export function usePinScrollBottom(
         // Skip the instant jump if the user interacted recently (gives them a chance
         // to cancel via wheel/touch before being yanked back).
         if (dist > LARGE_DISTANCE_PX && Date.now() - lastUserScrollRef.current > 500) {
+          isAnimationTickRef.current = true;
           el.scrollTop = target;
+          isAnimationTickRef.current = false;
           animationRef.current = 0;
           return;
         }
 
         const step = Math.min(Math.max(dist * SCROLL_EASE, 1), MAX_SCROLL_STEP_PX);
+        isAnimationTickRef.current = true;
         el.scrollTop += step;
+        isAnimationTickRef.current = false;
         animationRef.current = requestAnimationFrame(tick);
       };
 
@@ -137,11 +145,12 @@ export function usePinScrollBottom(
 
     const dfb = distanceFromBottom(el);
 
-    // Scrollbar drag: a pointerdown directly on the container (not on a child)
-    // means the user interacted with the scrollbar. The scroll that follows is
-    // user-initiated → detach. Animation never sets pointerDownOnContainerRef.
-    if (autoFollowRef.current && dfb > SCROLL_SNAP_PX && pointerDownOnContainerRef.current) {
-      pointerDownOnContainerRef.current = false;
+    // Any non-animation scroll that moves away from bottom = user interaction → detach.
+    // Covers: wheel, touch, scrollbar drag, keyboard (Page Up/Down, arrows, Home/End),
+    // middle-click drag, scrollbar arrows, auto-scroll extensions — everything.
+    // The isAnimationTickRef flag is set synchronously around el.scrollTop assignments
+    // inside the animation tick, so animation-propagated scroll events never reach here.
+    if (autoFollowRef.current && dfb > SCROLL_SNAP_PX && !isAnimationTickRef.current) {
       lastUserScrollRef.current = Date.now();
       disableAutoFollow();
       return;
@@ -178,20 +187,20 @@ export function usePinScrollBottom(
     };
   }, [disableAutoFollow, stopAnimation, stopFromUserScrollUp]);
 
-  /** Detect scrollbar drag: pointerdown directly on the container (not a child element)
-   *  means the user clicked the scrollbar track or thumb. The flag is consumed by onScroll
-   *  on the next scroll event, which detaches auto-follow. */
+  /** Scrollbar click: pointerdown directly on the container (not a child element)
+   *  means the user clicked the scrollbar track or thumb. Detach immediately. */
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     const onPointerDown = (e: PointerEvent) => {
       if (e.target === el) {
-        pointerDownOnContainerRef.current = true;
+        lastUserScrollRef.current = Date.now();
+        disableAutoFollow();
       }
     };
     el.addEventListener("pointerdown", onPointerDown, true);
     return () => el.removeEventListener("pointerdown", onPointerDown, true);
-  }, []);
+  }, [disableAutoFollow]);
 
   useEffect(() => {
     if (followLive && !prevFollowLiveRef.current) {
