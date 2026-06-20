@@ -5,6 +5,9 @@ const SCROLL_SNAP_PX = 1.5;
 /** Animation should feel smooth without delaying detach/attach feedback. */
 const SCROLL_EASE = 0.28;
 const MAX_SCROLL_STEP_PX = 180;
+/** When further than this from the bottom, jump instantly instead of animating — prevents slow
+ *  scroll animations on initial load with long history or after loading older messages. */
+const LARGE_DISTANCE_PX = 2500;
 
 function distanceFromBottom(el: HTMLElement): number {
   return el.scrollHeight - el.scrollTop - el.clientHeight;
@@ -68,6 +71,13 @@ export function usePinScrollBottom(
         const dist = target - el.scrollTop;
 
         if (dist <= SCROLL_SNAP_PX) {
+          el.scrollTop = target;
+          animationRef.current = 0;
+          return;
+        }
+
+        // Large distance → jump instantly so the user isn't waiting for animation.
+        if (dist > LARGE_DISTANCE_PX) {
           el.scrollTop = target;
           animationRef.current = 0;
           return;
