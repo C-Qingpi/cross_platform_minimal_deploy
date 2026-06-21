@@ -273,6 +273,10 @@ pull_or_clone() {
     echo "[git] Pull $name"
     stash_local_changes "$dir" "$name"
     sync_repo_to_remote "$name" "$dir" "$repo"
+    # Pop the stash created by stash_local_changes to restore user data
+    if git -C "$dir" stash list 2>/dev/null | grep -q .; then
+      git -C "$dir" stash pop 2>/dev/null || echo "[git] $name: warning — stash popped with conflicts (check 'git stash list')"
+    fi
     return 0
   fi
 
