@@ -27,7 +27,9 @@ export function usePinScrollBottom(
   followLive: boolean,
   structuralDeps: unknown[] = [],
   followResetKey: number = 0,
+  label: string = "",
 ) {
+  const prefix = label ? `[Scroll:${label}]` : "[Scroll]";
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
   const autoFollowRef = useRef(true);
@@ -98,28 +100,37 @@ export function usePinScrollBottom(
     [],
   );
 
-  const disableAutoFollow = useCallback(() => {
+  const disableAutoFollow = useCallback((reason: string) => {
     if (!autoFollowRef.current) return;
+    console.log(prefix, "OFF ←", reason);
     stopAnimation();
     autoFollowRef.current = false;
     setIsAutoFollow(false);
   }, [stopAnimation]);
 
-  const attachAutoFollow = useCallback(() => {
+  const attachAutoFollow = useCallback((source: string) => {
     if (autoFollowRef.current) return;
+    console.log(prefix, "ON ←", source);
     autoFollowRef.current = true;
     setIsAutoFollow(true);
   }, []);
 
   const enableAutoFollow = useCallback(() => {
-    attachAutoFollow();
+    attachAutoFollow("enableAutoFollow");
     const el = scrollRef.current;
     if (el) animateToBottom(el);
   }, [animateToBottom, attachAutoFollow]);
 
   const jumpToBottom = useCallback(() => {
-    enableAutoFollow();
-  }, [enableAutoFollow]);
+    const el = scrollRef.current;
+    if (!el) return;
+    isAnimationTickRef.current = true;
+    attachAutoFollow("jumpToBottom");
+    const target = Math.max(0, el.scrollHeight - el.clientHeight);
+    el.scrollTop = target;
+    isAnimationTickRef.current = false;
+    animateToBottom(el);
+  }, [animateToBottom, attachAutoFollow]);
 
   const followIfAuto = useCallback(() => {
     if (!autoFollowRef.current) return;
@@ -134,7 +145,7 @@ export function usePinScrollBottom(
       // always win. Any upward wheel / touch move immediately disables auto-follow
       // and cancels the animation, even if the event target is inside a nested
       // scrollable like a code block.
-      disableAutoFollow();
+      disableAutoFollow("user:scroll-up (wheel↑/touch↑)");
     },
     [disableAutoFollow],
   );
@@ -145,30 +156,30 @@ export function usePinScrollBottom(
 
     const dfb = distanceFromBottom(el);
 
-    // Any non-animation scroll that moves away from bottom = user interaction → detach.
-    // Covers: wheel, touch, scrollbar drag, keyboard (Page Up/Down, arrows, Home/End),
-    // middle-click drag, scrollbar arrows, auto-scroll extensions — everything.
-    // The isAnimationTickRef flag is set synchronously around el.scrollTop assignments
-    // inside the animation tick, so animation-propagated scroll events never reach here.
-    if (autoFollowRef.current && dfb > SCROLL_SNAP_PX && !isAnimationTickRef.current) {
-      lastUserScrollRef.current = Date.now();
-      disableAutoFollow();
-      return;
-    }
+    // NOTE: We intentionally do NOT detach here. Detach is handled by explicit
+    // event listeners (wheel↑, touchmove, pointerdown on scrollbar, keydown
+    // PageUp/Home).  Relying on scroll events to detect user interaction has
+    // false positives — browser content-reflow scrolls (loading older messages,
+    // inserted content above) fire identical scroll events and would kill
+    // auto-follow immediately after jumpToBottom.
 
     // User scrolled to strict bottom while detached → re-attach.
     if (!autoFollowRef.current && dfb <= SCROLL_SNAP_PX) {
-      attachAutoFollow();
+      attachAutoFollow("onScroll:dfb=" + dfb.toFixed(0));
       stopAnimation();
     }
-  }, [attachAutoFollow, disableAutoFollow, stopAnimation]);
+  }, [attachAutoFollow, stopAnimation]);
 
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
 
     const onWheel = (e: WheelEvent) => {
-      if (e.deltaY >= 0) return;
+      if (e.deltaY >= 0) {
+        console.log(prefix, "wheel↓ deltaY=", e.deltaY);
+        return;
+      }
+      console.log(prefix, "wheel↑ → OFF");
       lastUserScrollRef.current = Date.now();
       stopFromUserScrollUp();
     };
@@ -177,12 +188,22 @@ export function usePinScrollBottom(
       stopFromUserScrollUp();
     };
 
+    // Keyboard scroll-up: Page Up, Home, Arrow Up should detach auto-follow.
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "PageUp" || e.key === "Home" || e.key === "ArrowUp") {
+        lastUserScrollRef.current = Date.now();
+        stopFromUserScrollUp();
+      }
+    };
+
     const opts: AddEventListenerOptions = { passive: true, capture: true };
     el.addEventListener("wheel", onWheel, opts);
     el.addEventListener("touchmove", onTouchMove, opts);
+    el.addEventListener("keydown", onKeyDown);
     return () => {
       el.removeEventListener("wheel", onWheel, opts);
       el.removeEventListener("touchmove", onTouchMove, opts);
+      el.removeEventListener("keydown", onKeyDown);
       stopAnimation();
     };
   }, [disableAutoFollow, stopAnimation, stopFromUserScrollUp]);
@@ -195,7 +216,8 @@ export function usePinScrollBottom(
     const onPointerDown = (e: PointerEvent) => {
       if (e.target === el) {
         lastUserScrollRef.current = Date.now();
-        disableAutoFollow();
+        console.log(prefix, " pointerdown on scrollbar");
+        disableAutoFollow("user:scrollbar-drag");
       }
     };
     el.addEventListener("pointerdown", onPointerDown, true);
@@ -212,6 +234,7 @@ export function usePinScrollBottom(
   useEffect(() => {
     if (followResetKey === prevResetKeyRef.current) return;
     prevResetKeyRef.current = followResetKey;
+    console.log(prefix, "ON ← followResetKey:", prevResetKeyRef.current);
     enableAutoFollow();
   }, [followResetKey, enableAutoFollow]);
 
@@ -219,6 +242,13 @@ export function usePinScrollBottom(
     followIfAuto();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, structuralDeps);
+
+  const suppressScrollDetach = useCallback((fn: () => void) => {
+    isAnimationTickRef.current = true;
+    try { fn(); } finally {
+      isAnimationTickRef.current = false;
+    }
+  }, []);
 
   return {
     scrollRef,
@@ -228,5 +258,6 @@ export function usePinScrollBottom(
     isAutoFollow,
     notifyContentGrowth: followIfAuto,
     pinnedRef: autoFollowRef,
+    suppressScrollDetach,
   };
 }

@@ -48,6 +48,7 @@ export function PaginatedConversationLog({
         streamDraft?.reasoning?.length ?? 0,
       ],
       followResetKey,
+      "outer",
     );
 
   const onScroll = useCallback(() => {

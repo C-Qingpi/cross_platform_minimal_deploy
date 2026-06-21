@@ -214,6 +214,7 @@ function AgentActivityBlock({
         streamDraft?.reasoning?.length ?? 0,
       ],
       followResetKey,
+      "inner",
     );
 
   const onDraftReveal = () => {
