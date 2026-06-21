@@ -171,6 +171,10 @@ class CreateThreadRequest(BaseModel):
     name: str | None = None
 
 
+class RenameThreadRequest(BaseModel):
+    name: str
+
+
 class ModelSwitchRequest(BaseModel):
     model: str
     thread_id: str | None = None
@@ -309,6 +313,19 @@ async def create_thread(req: CreateThreadRequest, agent_id: str = Query("default
 @app.delete("/api/threads/{thread_id}")
 async def delete_thread(thread_id: str, agent_id: str = Query("default")):
     result = _reader(agent_id).delete_thread(thread_id, default_thread_id(agent_id))
+    if "error" in result:
+        raise HTTPException(400, result["error"])
+    return result
+
+
+@app.post("/api/threads/{thread_id}/branch")
+async def branch_thread(thread_id: str, agent_id: str = Query("default")):
+    return _reader(agent_id).branch_thread(thread_id)
+
+
+@app.post("/api/threads/{thread_id}/rename")
+async def rename_thread(thread_id: str, req: RenameThreadRequest, agent_id: str = Query("default")):
+    result = _reader(agent_id).rename_thread(thread_id, req.name)
     if "error" in result:
         raise HTTPException(400, result["error"])
     return result

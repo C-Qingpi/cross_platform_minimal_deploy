@@ -237,6 +237,44 @@ class ArionReader:
         self._save_threads_meta(meta)
         return {"status": "created", "thread_id": thread_id}
 
+    def branch_thread(self, source_id: str) -> dict[str, str]:
+        """Create a fresh thread branched from source_id. Auto-generates name with suffix.
+
+        Branches get ids like 'source-01', 'source-02' etc. The display name includes
+        a suffix so branches are visually distinct in the sidebar.
+        """
+        meta = self._load_threads_meta()
+        source = meta.get(source_id, {})
+        source_name = source.get("name", source_id)
+
+        # Find the next available suffix for this source thread
+        existing = set(meta.keys())
+        suffix = 1
+        while f"{source_id}-{suffix:02d}" in existing:
+            suffix += 1
+        new_id = f"{source_id}-{suffix:02d}"
+        new_name = f"{source_name} ({suffix:02d})"
+
+        meta[new_id] = {
+            "name": new_name,
+            "created_at": datetime.now().isoformat(),
+            "branched_from": source_id,
+            "wrapping_enabled": source.get("wrapping_enabled", True),
+            "model": source.get("model"),
+        }
+        self._save_threads_meta(meta)
+        return {"status": "created", "thread_id": new_id, "name": new_name}
+
+    def rename_thread(self, thread_id: str, name: str) -> dict[str, str]:
+        """Change the display name of a thread. Thread_id stays the same."""
+        if not name or not name.strip():
+            return {"error": "name cannot be empty"}
+        meta = self._load_threads_meta()
+        meta.setdefault(thread_id, {})
+        meta[thread_id]["name"] = name.strip()
+        self._save_threads_meta(meta)
+        return {"status": "renamed", "thread_id": thread_id, "name": name.strip()}
+
     def delete_thread(self, thread_id: str, default_thread: str) -> dict[str, str]:
         if thread_id == default_thread:
             return {"error": "cannot delete main thread"}

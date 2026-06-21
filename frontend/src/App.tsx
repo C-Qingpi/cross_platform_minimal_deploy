@@ -234,6 +234,20 @@ export default function App() {
     await refreshThreads();
   };
 
+  const handleBranchThread = async () => {
+    const result = await api.branchThread(activeAgentId, activeThreadId);
+    await refreshThreads();
+    setActiveThreadId(result.thread_id);
+  };
+
+  const handleRenameThread = async () => {
+    const currentName = threads.find((t) => t.thread_id === activeThreadId)?.name || activeThreadId;
+    const name = prompt("New thread name:", currentName);
+    if (!name?.trim()) return;
+    await api.renameThread(activeAgentId, activeThreadId, name.trim());
+    await refreshThreads();
+  };
+
   const handleResetSearchIndex = async () => {
     if (
       !confirm(
@@ -307,6 +321,8 @@ export default function App() {
           actions={
             <>
               <button type="button" onClick={handleCreateThread} className="rounded-md border border-slate-300 px-2 py-0.5 text-xs">+</button>
+              <button type="button" onClick={handleRenameThread} className="rounded-md border border-slate-300 px-2 py-0.5 text-xs" title="Rename current thread">✏️</button>
+              <button type="button" onClick={handleBranchThread} className="rounded-md border border-slate-300 px-2 py-0.5 text-xs" title="Branch current thread">🌿</button>
               <button type="button" onClick={handleDeleteThread} className="rounded-md border border-slate-300 px-2 py-0.5 text-xs">Del</button>
             </>
           }

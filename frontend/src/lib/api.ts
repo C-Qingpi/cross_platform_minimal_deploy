@@ -143,6 +143,22 @@ export async function deleteThread(agentId: string, threadId: string) {
   return safeJson(res, "Failed to delete thread");
 }
 
+export async function branchThread(agentId: string, threadId: string) {
+  const res = await fetch(`/api/threads/${encodeURIComponent(threadId)}/branch${qs({ agent_id: agentId })}`, {
+    method: "POST",
+  });
+  return safeJson<{ status: string; thread_id: string; name: string }>(res, "Failed to branch thread");
+}
+
+export async function renameThread(agentId: string, threadId: string, name: string) {
+  const res = await fetch(`/api/threads/${encodeURIComponent(threadId)}/rename${qs({ agent_id: agentId })}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  return safeJson(res, "Failed to rename thread");
+}
+
 export async function fetchEvents(afterIndex = 0, agentId?: string): Promise<EventsResponse> {
   const params: Record<string, string | undefined> = {
     after_index: String(afterIndex),
