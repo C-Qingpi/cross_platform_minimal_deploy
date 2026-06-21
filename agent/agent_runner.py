@@ -187,15 +187,23 @@ def _optional_middleware(workspace: Path) -> list:
 def _warm_dev_search_indexers() -> None:
     if not _is_dev_deploy():
         return
+    import threading
+
     from arion_agent.environments.search import SearchEnvironment, is_search_available
 
     if not is_search_available():
         logger.warning("Dev deploy: search extras not installed; skip search indexer warmup")
         return
-    for entry in registry.list_agents():
-        ws = Path(entry["workspace"])
-        SearchEnvironment(ws, system_prompt=False).service.start()
-        logger.info("Search indexer warmup started for %s", ws)
+
+    def _warmup() -> None:
+        for entry in registry.list_agents():
+            ws = Path(entry["workspace"])
+            SearchEnvironment(ws, system_prompt=False).service.start()
+            logger.info("Search indexer warmup started for %s", ws)
+
+    t = threading.Thread(target=_warmup, name="search-warmup", daemon=True)
+    t.start()
+    logger.info("Search indexer warmup dispatched (background)")
 
 
 def create_agent_instance(agent_id: str, model_spec: str) -> object:
