@@ -11,8 +11,6 @@
 #   GIT_BRANCH=dev|main   override branch (auto: Dev checkout -> dev, Prod -> main)
 #   SKIP_SSH=1            default; set SKIP_SSH=0 to re-check GitHub SSH
 #   SKIP_DEPS=1           pull only, skip setup.sh
-#   AUTO_STASH=0          disable auto-stash (default: stash all local changes before sync)
-#   FORCE_SYNC=0          use ff-only pull instead of reset --hard (default: force-sync)
 
 set -euo pipefail
 
@@ -51,14 +49,10 @@ fi
 export AGENTLEARNING_ROOT="$STACK_ROOT"
 export GIT_BRANCH="$BRANCH"
 export SKIP_SSH="${SKIP_SSH:-1}"
-export AUTO_STASH="${AUTO_STASH:-1}"
-export FORCE_SYNC="${FORCE_SYNC:-1}"
 
 echo "AGENTLEARNING_ROOT=$AGENTLEARNING_ROOT"
 echo "GIT_BRANCH=$GIT_BRANCH"
 echo "SKIP_SSH=$SKIP_SSH"
-echo "AUTO_STASH=$AUTO_STASH"
-echo "FORCE_SYNC=$FORCE_SYNC"
 
 bash "$GIT_SETUP"
 
