@@ -248,17 +248,25 @@ export default function App() {
   };
 
   const handleBranchThread = async (threadId: string) => {
-    const result = await api.branchThread(activeAgentId, threadId);
-    await refreshThreads();
-    setActiveThreadId(result.thread_id);
+    try {
+      const result = await api.branchThread(activeAgentId, threadId);
+      await refreshThreads();
+      setActiveThreadId(result.thread_id);
+    } catch (e) {
+      alert("Branch failed: " + (e instanceof Error ? e.message : String(e)));
+    }
   };
 
   const handleRenameThread = async (threadId: string) => {
     const currentName = threads.find((t) => t.thread_id === threadId)?.name || threadId;
     const name = prompt("New thread name:", currentName);
     if (!name?.trim()) return;
-    await api.renameThread(activeAgentId, threadId, name.trim());
-    await refreshThreads();
+    try {
+      await api.renameThread(activeAgentId, threadId, name.trim());
+      await refreshThreads();
+    } catch (e) {
+      alert("Rename failed: " + (e instanceof Error ? e.message : String(e)));
+    }
   };
 
   const handleResetSearchIndex = async () => {
@@ -371,9 +379,9 @@ export default function App() {
                   >
                     <button
                       type="button"
-                      onClick={() => {
-                        setMenuOpenThreadId(null);
-                        handleRenameThread(t.thread_id);
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRenameThread(t.thread_id).finally(() => setMenuOpenThreadId(null));
                       }}
                       className="w-full px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-100"
                     >
@@ -381,9 +389,9 @@ export default function App() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => {
-                        setMenuOpenThreadId(null);
-                        handleBranchThread(t.thread_id);
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleBranchThread(t.thread_id).finally(() => setMenuOpenThreadId(null));
                       }}
                       className="w-full px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-100"
                     >
@@ -392,9 +400,9 @@ export default function App() {
                     <hr className="my-1 border-slate-100" />
                     <button
                       type="button"
-                      onClick={() => {
-                        setMenuOpenThreadId(null);
-                        handleDeleteThread(t.thread_id);
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteThread(t.thread_id).finally(() => setMenuOpenThreadId(null));
                       }}
                       className="w-full px-3 py-1.5 text-left text-xs text-red-600 hover:bg-red-50"
                     >
