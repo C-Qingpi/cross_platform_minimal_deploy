@@ -47,10 +47,12 @@ export default function App() {
   const [wrappingEnabled, setWrappingEnabled] = useState(true);
   const [menuOpenThreadId, setMenuOpenThreadId] = useState<string | null>(null);
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
+  const [sortVersion, setSortVersion] = useState(0);
 
   const knownFinalKeysRef = useRef<Set<string>>(new Set());
   const contextRef = useRef("");
   const pendingModelRef = useRef<string | null>(null);
+  const prevMsgLenRef = useRef(0);
 
   const mainThread = activeAgentId ? `${activeAgentId}-main` : "";
   const { clearDraft } = useDraftStorage(activeAgentId, activeThreadId, draft, setDraft);
@@ -108,18 +110,36 @@ export default function App() {
     refreshThreads();
   }, [activeAgentId, refreshThreads]);
 
-  // Record last-used timestamp when switching agent or thread
+  // Record last-used timestamp when switching agent or thread (click fallback)
   useEffect(() => {
     if (activeAgentId) {
-      localStorage.setItem(`${LAST_USED_AGENT_PREFIX}${activeAgentId}`, String(Date.now()));
+      const key = `${LAST_USED_AGENT_PREFIX}${activeAgentId}`;
+      if (!localStorage.getItem(key)) {
+        localStorage.setItem(key, String(Date.now()));
+      }
     }
   }, [activeAgentId]);
 
-  const markThreadUsed = useCallback((threadId: string) => {
-    const key = `${LAST_USED_THREAD_PREFIX}${activeAgentId}:${threadId}`;
+  // Timestamp helpers — write localStorage + trigger sort re-render
+  const markAgentMessage = useCallback((agentId: string) => {
+    const key = `${LAST_USED_AGENT_PREFIX}${agentId}`;
+    const prev = localStorage.getItem(key);
     localStorage.setItem(key, String(Date.now()));
+    if (prev) setSortVersion((v) => v + 1);
+  }, []);
+
+  const markThreadMessage = useCallback((agentId: string, threadId: string) => {
+    const key = `${LAST_USED_THREAD_PREFIX}${agentId}:${threadId}`;
+    localStorage.setItem(key, String(Date.now()));
+    setSortVersion((v) => v + 1);
+  }, []);
+
+  // Keep click-to-switch updating timestamps too (so clicking still brings to top)
+  const markThreadUsed = useCallback((threadId: string) => {
+    markThreadMessage(activeAgentId, threadId);
+    markAgentMessage(activeAgentId);
     setActiveThreadId(threadId);
-  }, [activeAgentId]);
+  }, [activeAgentId, markAgentMessage, markThreadMessage]);
 
   // Sorted agents: by last-used timestamp (most recent first)
   const sortedAgents = useMemo(() => {
@@ -128,7 +148,8 @@ export default function App() {
       const tB = Number(localStorage.getItem(`${LAST_USED_AGENT_PREFIX}${b.agent_id}`) || 0);
       return tB - tA;
     });
-  }, [agents]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agents, sortVersion]);
 
   // Sorted threads: main always on top, then by last-used timestamp (most recent first)
   const sortedThreads = useMemo(() => {
@@ -140,7 +161,8 @@ export default function App() {
       return tB - tA;
     });
     return [...main, ...rest];
-  }, [threads, activeAgentId, mainThread]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threads, activeAgentId, mainThread, sortVersion]);
 
   useEffect(() => {
     if (activeAgentId && activeThreadId) {
@@ -208,6 +230,15 @@ export default function App() {
     }
   }, [messages, activeAgentId, activeThreadId, agentState]);
 
+  // Track when new messages arrive (via polling) — update sort timestamps
+  useEffect(() => {
+    if (messages.length > prevMsgLenRef.current && prevMsgLenRef.current > 0) {
+      markAgentMessage(activeAgentId);
+      markThreadMessage(activeAgentId, activeThreadId);
+    }
+    prevMsgLenRef.current = messages.length;
+  }, [messages.length, activeAgentId, activeThreadId, markAgentMessage, markThreadMessage]);
+
   const agentOnline = agentState?.status === "online";
 
   const handleSend = async () => {
@@ -215,6 +246,8 @@ export default function App() {
     const content = draft.trim();
     clearDraft();
     setScrollFollowReset((k) => k + 1);
+    markAgentMessage(activeAgentId);
+    markThreadMessage(activeAgentId, activeThreadId);
     await api.sendMessage(activeAgentId, activeThreadId, content);
     refreshTail();
   };
