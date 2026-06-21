@@ -52,7 +52,6 @@ export default function App() {
   const knownFinalKeysRef = useRef<Set<string>>(new Set());
   const contextRef = useRef("");
   const pendingModelRef = useRef<string | null>(null);
-  const prevMsgLenRef = useRef(0);
 
   const mainThread = activeAgentId ? `${activeAgentId}-main` : "";
   const { clearDraft } = useDraftStorage(activeAgentId, activeThreadId, draft, setDraft);
@@ -134,12 +133,10 @@ export default function App() {
     setSortVersion((v) => v + 1);
   }, []);
 
-  // Keep click-to-switch updating timestamps too (so clicking still brings to top)
+  // Navigate to thread without updating sort timestamps (sort = last human message only)
   const markThreadUsed = useCallback((threadId: string) => {
-    markThreadMessage(activeAgentId, threadId);
-    markAgentMessage(activeAgentId);
     setActiveThreadId(threadId);
-  }, [activeAgentId, markAgentMessage, markThreadMessage]);
+  }, []);
 
   // Sorted agents: by last-used timestamp (most recent first)
   const sortedAgents = useMemo(() => {
@@ -229,15 +226,6 @@ export default function App() {
       setAnimateFinalKey(newest);
     }
   }, [messages, activeAgentId, activeThreadId, agentState]);
-
-  // Track when new messages arrive (via polling) — update sort timestamps
-  useEffect(() => {
-    if (messages.length > prevMsgLenRef.current && prevMsgLenRef.current > 0) {
-      markAgentMessage(activeAgentId);
-      markThreadMessage(activeAgentId, activeThreadId);
-    }
-    prevMsgLenRef.current = messages.length;
-  }, [messages.length, activeAgentId, activeThreadId, markAgentMessage, markThreadMessage]);
 
   const agentOnline = agentState?.status === "online";
 

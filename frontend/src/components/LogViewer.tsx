@@ -201,12 +201,9 @@ function AgentActivityBlock({
   const tailKey =
     activity.length > 0 ? messageDedupeKey(activity[activity.length - 1], activity.length - 1) : "";
 
-  const followLive = live || Boolean(streamDraft);
-
   // Inner activity panel scroll — separate auto-follow; shares followResetKey with outer on send.
   const { scrollRef, endRef, onScroll, jumpToBottom, isAutoFollow, notifyContentGrowth, pinnedRef } =
     usePinScrollBottom(
-      followLive,
       [
         activity.length,
         tailKey,

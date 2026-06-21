@@ -34,12 +34,10 @@ export function PaginatedConversationLog({
   onLoadOlder: () => Promise<void>;
 }) {
   const loadingOlderRef = useRef(false);
-  const followLive = threadActive || Boolean(streamDraft);
 
   // Outer message log scroll — independent auto-follow from inner activity panel.
   const { scrollRef, endRef, onScroll: onPinScroll, jumpToBottom, isAutoFollow, notifyContentGrowth } =
     usePinScrollBottom(
-      followLive,
       [
         rounds.length,
         total,

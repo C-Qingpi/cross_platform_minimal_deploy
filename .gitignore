@@ -13,3 +13,5 @@ __pycache__/
 *.err
 agent.log*
 frontend.log*
+.venv/
+arion_agent_deploy.egg-info/
