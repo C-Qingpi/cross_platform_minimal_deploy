@@ -365,7 +365,6 @@ async def fs_browse(path: str = Query(...)):
 @app.get("/api/fs/default-workspace")
 async def fs_default_workspace(agent_id: str = Query(...)):
     ws = DEPLOY_ROOT / "workspaces" / agent_id
-    ws.mkdir(parents=True, exist_ok=True)
     return {"path": str(ws.resolve())}
 
 
