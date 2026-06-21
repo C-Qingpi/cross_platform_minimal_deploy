@@ -43,6 +43,7 @@ export default function App() {
   const [createAgentOpen, setCreateAgentOpen] = useState(false);
   const [scrollFollowReset, setScrollFollowReset] = useState(0);
   const [wrappingEnabled, setWrappingEnabled] = useState(true);
+  const [menuOpenThreadId, setMenuOpenThreadId] = useState<string | null>(null);
 
   const knownFinalKeysRef = useRef<Set<string>>(new Set());
   const contextRef = useRef("");
@@ -109,6 +110,18 @@ export default function App() {
       localStorage.setItem(`${ACTIVE_THREAD_PREFIX}${activeAgentId}`, activeThreadId);
     }
   }, [activeAgentId, activeThreadId]);
+
+  // Close thread dropdown when clicking outside
+  useEffect(() => {
+    if (!menuOpenThreadId) return;
+    const handler = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('[data-thread-menu]')) {
+        setMenuOpenThreadId(null);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [menuOpenThreadId]);
 
   useEffect(() => {
     if (pendingModelRef.current) {
@@ -224,27 +237,27 @@ export default function App() {
     setActiveThreadId(id.trim());
   };
 
-  const handleDeleteThread = async () => {
-    if (activeThreadId === mainThread) {
+  const handleDeleteThread = async (threadId: string) => {
+    if (threadId === mainThread) {
       alert("Cannot delete main thread");
       return;
     }
-    if (!confirm(`Delete thread ${activeThreadId}?`)) return;
-    await api.deleteThread(activeAgentId, activeThreadId);
+    if (!confirm(`Delete thread ${threadId}?`)) return;
+    await api.deleteThread(activeAgentId, threadId);
     await refreshThreads();
   };
 
-  const handleBranchThread = async () => {
-    const result = await api.branchThread(activeAgentId, activeThreadId);
+  const handleBranchThread = async (threadId: string) => {
+    const result = await api.branchThread(activeAgentId, threadId);
     await refreshThreads();
     setActiveThreadId(result.thread_id);
   };
 
-  const handleRenameThread = async () => {
-    const currentName = threads.find((t) => t.thread_id === activeThreadId)?.name || activeThreadId;
+  const handleRenameThread = async (threadId: string) => {
+    const currentName = threads.find((t) => t.thread_id === threadId)?.name || threadId;
     const name = prompt("New thread name:", currentName);
     if (!name?.trim()) return;
-    await api.renameThread(activeAgentId, activeThreadId, name.trim());
+    await api.renameThread(activeAgentId, threadId, name.trim());
     await refreshThreads();
   };
 
@@ -319,30 +332,77 @@ export default function App() {
           onToggleExpand={() => togglePanel("threads")}
           collapsed={threadsCollapsed}
           actions={
-            <>
-              <button type="button" onClick={handleCreateThread} className="rounded-md border border-slate-300 px-2 py-0.5 text-xs">+</button>
-              <button type="button" onClick={handleRenameThread} className="rounded-md border border-slate-300 px-2 py-0.5 text-xs" title="Rename current thread">✏️</button>
-              <button type="button" onClick={handleBranchThread} className="rounded-md border border-slate-300 px-2 py-0.5 text-xs" title="Branch current thread">🌿</button>
-              <button type="button" onClick={handleDeleteThread} className="rounded-md border border-slate-300 px-2 py-0.5 text-xs">Del</button>
-            </>
+            <button type="button" onClick={handleCreateThread} className="rounded-md border border-slate-300 px-2 py-0.5 text-xs">+</button>
           }
         >
           <div className="space-y-1">
             {threads.map((t) => (
-              <button
-                key={t.thread_id}
-                type="button"
-                onClick={() => setActiveThreadId(t.thread_id)}
-                className={`w-full rounded px-2 py-1.5 text-left text-xs ${
-                  t.thread_id === activeThreadId ? "bg-slate-100 font-medium" : "text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                <div>{t.name || t.thread_id}</div>
-                {expandedPanel === "threads" && (
-                  <div className="text-[10px] text-slate-400 font-mono mt-0.5">{t.thread_id}</div>
+              <div key={t.thread_id} className="group relative flex items-center rounded px-1 py-1 has-[[data-thread-menu]]:bg-slate-50">
+                <button
+                  type="button"
+                  onClick={() => setActiveThreadId(t.thread_id)}
+                  className={`flex-1 rounded px-1.5 py-1 text-left text-xs ${
+                    t.thread_id === activeThreadId ? "bg-slate-100 font-medium" : "hover:bg-slate-50"
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className="truncate">{t.name || t.thread_id}</span>
+                    {t.active && <span className="text-[10px] text-amber-600 shrink-0">●</span>}
+                  </div>
+                  {expandedPanel === "threads" && (
+                    <div className="text-[10px] text-slate-400 font-mono mt-0.5">{t.thread_id}</div>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMenuOpenThreadId(menuOpenThreadId === t.thread_id ? null : t.thread_id);
+                  }}
+                  className="shrink-0 rounded px-1 py-1 text-xs text-slate-400 hover:text-slate-700 hover:bg-slate-200 opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="Thread actions"
+                >
+                  ⋮
+                </button>
+                {menuOpenThreadId === t.thread_id && (
+                  <div
+                    data-thread-menu="true"
+                    className="absolute right-0 top-full z-50 mt-0.5 w-32 rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuOpenThreadId(null);
+                        handleRenameThread(t.thread_id);
+                      }}
+                      className="w-full px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-100"
+                    >
+                      ✏️ Rename
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuOpenThreadId(null);
+                        handleBranchThread(t.thread_id);
+                      }}
+                      className="w-full px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-100"
+                    >
+                      🌿 Branch
+                    </button>
+                    <hr className="my-1 border-slate-100" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuOpenThreadId(null);
+                        handleDeleteThread(t.thread_id);
+                      }}
+                      className="w-full px-3 py-1.5 text-left text-xs text-red-600 hover:bg-red-50"
+                    >
+                      🗑 Delete
+                    </button>
+                  </div>
                 )}
-                {t.active && <div className="text-[10px] text-amber-600">running</div>}
-              </button>
+              </div>
             ))}
           </div>
         </SidebarPanel>
