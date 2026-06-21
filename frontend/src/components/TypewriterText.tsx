@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import MarkdownPreview from "@uiw/react-markdown-preview";
+import type { Components } from "react-markdown";
 
 const TICK_MS = 10;
 const TARGET_DURATION_MS = 450;
@@ -70,6 +70,17 @@ export function TypewriterText({
     runIdRef.current = "";
   }, [animate, text.length, text]);
 
+  const components = useMemo<Components>(
+    () => ({
+      table: ({ children, ...props }) => (
+        <div className="md-table-wrap">
+          <table {...props}>{children}</table>
+        </div>
+      ),
+    }),
+    [],
+  );
+
   const slice = text.slice(0, visible);
   const done = visible >= text.length;
 
@@ -85,8 +96,12 @@ export function TypewriterText({
   }
 
   return (
-    <div className={`markdown-body min-w-0 max-w-full overflow-x-auto ${className}`}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+    <div className={className} data-color-mode="light">
+      <MarkdownPreview
+        source={text}
+        components={components}
+        wrapperElement={{ "data-color-mode": "light" }}
+      />
     </div>
   );
 }

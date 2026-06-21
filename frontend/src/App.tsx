@@ -44,6 +44,7 @@ export default function App() {
   const [scrollFollowReset, setScrollFollowReset] = useState(0);
   const [wrappingEnabled, setWrappingEnabled] = useState(true);
   const [menuOpenThreadId, setMenuOpenThreadId] = useState<string | null>(null);
+  const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
 
   const knownFinalKeysRef = useRef<Set<string>>(new Set());
   const contextRef = useRef("");
@@ -115,8 +116,9 @@ export default function App() {
   useEffect(() => {
     if (!menuOpenThreadId) return;
     const handler = (e: MouseEvent) => {
-      if (!(e.target as HTMLElement).closest('[data-thread-menu]')) {
+      if (!(e.target as HTMLElement).closest('[data-thread-menu]') && !(e.target as HTMLElement).closest('[data-thread-menu-btn]')) {
         setMenuOpenThreadId(null);
+        setMenuPosition(null);
       }
     };
     document.addEventListener("mousedown", handler);
@@ -363,8 +365,11 @@ export default function App() {
                 </button>
                 <button
                   type="button"
+                  data-thread-menu-btn="true"
                   onClick={(e) => {
                     e.stopPropagation();
+                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                    setMenuPosition({ x: rect.right, y: rect.bottom });
                     setMenuOpenThreadId(menuOpenThreadId === t.thread_id ? null : t.thread_id);
                   }}
                   className="shrink-0 rounded px-1 py-1 text-xs text-slate-400 hover:text-slate-700 hover:bg-slate-200 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -372,44 +377,6 @@ export default function App() {
                 >
                   ⋮
                 </button>
-                {menuOpenThreadId === t.thread_id && (
-                  <div
-                    data-thread-menu="true"
-                    className="absolute right-0 top-full z-50 mt-0.5 w-32 rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
-                  >
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleRenameThread(t.thread_id).finally(() => setMenuOpenThreadId(null));
-                      }}
-                      className="w-full px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-100"
-                    >
-                      ✏️ Rename
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleBranchThread(t.thread_id).finally(() => setMenuOpenThreadId(null));
-                      }}
-                      className="w-full px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-100"
-                    >
-                      🌿 Branch
-                    </button>
-                    <hr className="my-1 border-slate-100" />
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteThread(t.thread_id).finally(() => setMenuOpenThreadId(null));
-                      }}
-                      className="w-full px-3 py-1.5 text-left text-xs text-red-600 hover:bg-red-50"
-                    >
-                      🗑 Delete
-                    </button>
-                  </div>
-                )}
               </div>
             ))}
           </div>
@@ -522,6 +489,40 @@ export default function App() {
         </footer>
       </div>
       <Toast toast={toast} />
+      {menuOpenThreadId && menuPosition && (() => {
+        const thread = threads.find((t) => t.thread_id === menuOpenThreadId);
+        if (!thread) return null;
+        return (
+          <div
+            data-thread-menu="true"
+            className="fixed z-50 w-32 rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+            style={{ left: menuPosition.x, top: menuPosition.y + 2 }}
+          >
+            <button
+              type="button"
+              onClick={() => handleRenameThread(thread.thread_id).finally(() => { setMenuOpenThreadId(null); setMenuPosition(null); })}
+              className="w-full px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-100"
+            >
+              ✏️ Rename
+            </button>
+            <button
+              type="button"
+              onClick={() => handleBranchThread(thread.thread_id).finally(() => { setMenuOpenThreadId(null); setMenuPosition(null); })}
+              className="w-full px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-100"
+            >
+              🌿 Branch
+            </button>
+            <hr className="my-1 border-slate-100" />
+            <button
+              type="button"
+              onClick={() => handleDeleteThread(thread.thread_id).finally(() => { setMenuOpenThreadId(null); setMenuPosition(null); })}
+              className="w-full px-3 py-1.5 text-left text-xs text-red-600 hover:bg-red-50"
+            >
+              🗑 Delete
+            </button>
+          </div>
+        );
+      })()}
     </div>
   );
 }

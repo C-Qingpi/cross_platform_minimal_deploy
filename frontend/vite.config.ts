@@ -45,7 +45,12 @@ export default defineConfig(() => {
     plugins: [tailwindcss(), react()],
     server: {
       port: frontendPort,
-      proxy: { "/api": { target: `http://127.0.0.1:${backendPort}` } },
+      proxy: {
+        "/api": {
+          target: `http://127.0.0.1:${backendPort}`,
+          changeOrigin: true,
+        },
+      },
     },
   };
 });

@@ -48,6 +48,14 @@ export function usePinScrollBottom(
    *  Used to prevent instant jumps that would fight recent user interaction. */
   const lastUserScrollRef = useRef(0);
 
+  /** Timestamp (epoch ms) of the last user-initiated break/disabling of auto-follow
+   *  (wheel-up, touch-pan, scrollbar-drag, keyboard PageUp/Home/ArrowUp).
+   *  Used to debounce the followLive rising-edge re-enable — if the user just manually
+   *  broke auto-follow, we wait 3 seconds before re-engaging on followLive transition.
+   *  This prevents the initial data-fetch's followLive false→true transition from
+   *  overriding a user's scroll-up that happened in the same ms window as page load. */
+  const lastUserBreakRef = useRef(0);
+
   /** True only during the synchronous execution of the animation tick function — specifically
    *  during `el.scrollTop` assignments. Used by onScroll to distinguish animation-propagated
    *  scroll events from real user-initiated ones (keyboard, middle-click, scrollbar arrows, etc.).
@@ -106,6 +114,7 @@ export function usePinScrollBottom(
     stopAnimation();
     autoFollowRef.current = false;
     setIsAutoFollow(false);
+    lastUserBreakRef.current = Date.now();
   }, [stopAnimation]);
 
   const attachAutoFollow = useCallback((source: string) => {
@@ -226,7 +235,13 @@ export function usePinScrollBottom(
 
   useEffect(() => {
     if (followLive && !prevFollowLiveRef.current) {
-      enableAutoFollow();
+      // Debounce: don't re-enable auto-follow if the user manually broke it
+      // within the last 3 seconds. This prevents the initial data-fetch's
+      // followLive false→true transition from overriding a user's scroll-up
+      // that races with page-load data arrival.
+      if (Date.now() - lastUserBreakRef.current > 3000) {
+        enableAutoFollow();
+      }
     }
     prevFollowLiveRef.current = followLive;
   }, [followLive, enableAutoFollow]);

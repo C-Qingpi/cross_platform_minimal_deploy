@@ -21,26 +21,26 @@ body {
   background: var(--color-bg);
 }
 
-.markdown-body { line-height: 1.6; word-wrap: break-word; overflow-wrap: anywhere; max-width: 100%; min-width: 0; }
-.markdown-body p { margin: 0.35em 0; }
-.markdown-body code {
-  background: #f1f5f9;
-  padding: 0.1em 0.35em;
-  border-radius: 4px;
-  font-size: 0.9em;
-  word-break: break-all;
-}
-.markdown-body pre {
-  background: #0f172a;
-  color: #e2e8f0;
-  padding: 0.75rem;
-  border-radius: 8px;
-  overflow-x: auto;
+/* Restrict markdown images/videos to chat bubble width */
+.wmde-markdown img,
+.wmde-markdown video {
   max-width: 100%;
+  height: auto;
 }
-.markdown-body table {
-  display: block;
-  max-width: 100%;
+
+/* Match app font sizing (library defaults to 16px) */
+.wmde-markdown {
+  font-size: 14px;
+  font-family: var(--font-sans);
+}
+
+/* Wide tables: wrapper provides horizontal scroll.
+   Library uses display:block which breaks column-sizing; restore display:table. */
+.wmde-markdown .md-table-wrap {
   overflow-x: auto;
 }
-.markdown-body pre code { background: transparent; padding: 0; color: inherit; }
+.wmde-markdown .md-table-wrap > table {
+  display: table;
+  width: 100%;
+  overflow-x: unset;
+}
