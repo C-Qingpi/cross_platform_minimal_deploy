@@ -5,6 +5,7 @@
 deploy_env_load() {
   local root="${1:?deploy root required}"
   root="$(cd "$root" && pwd)"
+  export DEPLOY_ROOT="$root"
   local cfg="$root/deploy.config"
 
   if [[ ! -f "$cfg" ]]; then
@@ -51,7 +52,6 @@ deploy_env_load() {
   fi
   export ARION_DEPLOY_MODE=dev
 
-  export DEPLOY_ROOT="$root"
   export BACKEND_PORT="$DEPLOY_BACKEND_PORT"
   export FRONTEND_PORT="$DEPLOY_FRONTEND_PORT"
   export DEPLOY_MODE
