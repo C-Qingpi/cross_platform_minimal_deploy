@@ -21,6 +21,8 @@ const MODELS = [
 
 const ACTIVE_AGENT_KEY = "minimal-agent-active-id";
 const ACTIVE_THREAD_PREFIX = "minimal-agent-thread:";
+const LAST_USED_AGENT_PREFIX = "minimal-agent-last-used:";
+const LAST_USED_THREAD_PREFIX = "minimal-agent-thread-last-used:";
 
 type ExpandedPanel = "agents" | "threads" | null;
 
@@ -105,6 +107,40 @@ export default function App() {
     localStorage.setItem(ACTIVE_AGENT_KEY, activeAgentId);
     refreshThreads();
   }, [activeAgentId, refreshThreads]);
+
+  // Record last-used timestamp when switching agent or thread
+  useEffect(() => {
+    if (activeAgentId) {
+      localStorage.setItem(`${LAST_USED_AGENT_PREFIX}${activeAgentId}`, String(Date.now()));
+    }
+  }, [activeAgentId]);
+
+  const markThreadUsed = useCallback((threadId: string) => {
+    const key = `${LAST_USED_THREAD_PREFIX}${activeAgentId}:${threadId}`;
+    localStorage.setItem(key, String(Date.now()));
+    setActiveThreadId(threadId);
+  }, [activeAgentId]);
+
+  // Sorted agents: by last-used timestamp (most recent first)
+  const sortedAgents = useMemo(() => {
+    return [...agents].sort((a, b) => {
+      const tA = Number(localStorage.getItem(`${LAST_USED_AGENT_PREFIX}${a.agent_id}`) || 0);
+      const tB = Number(localStorage.getItem(`${LAST_USED_AGENT_PREFIX}${b.agent_id}`) || 0);
+      return tB - tA;
+    });
+  }, [agents]);
+
+  // Sorted threads: main always on top, then by last-used timestamp (most recent first)
+  const sortedThreads = useMemo(() => {
+    const main = threads.filter((t) => t.thread_id === mainThread);
+    const rest = threads.filter((t) => t.thread_id !== mainThread);
+    rest.sort((a, b) => {
+      const tA = Number(localStorage.getItem(`${LAST_USED_THREAD_PREFIX}${activeAgentId}:${a.thread_id}`) || 0);
+      const tB = Number(localStorage.getItem(`${LAST_USED_THREAD_PREFIX}${activeAgentId}:${b.thread_id}`) || 0);
+      return tB - tA;
+    });
+    return [...main, ...rest];
+  }, [threads, activeAgentId, mainThread]);
 
   useEffect(() => {
     if (activeAgentId && activeThreadId) {
@@ -236,7 +272,7 @@ export default function App() {
     if (!id?.trim()) return;
     await api.createThread(activeAgentId, id.trim());
     await refreshThreads();
-    setActiveThreadId(id.trim());
+    markThreadUsed(id.trim());
   };
 
   const handleDeleteThread = async (threadId: string) => {
@@ -253,7 +289,7 @@ export default function App() {
     try {
       const result = await api.branchThread(activeAgentId, threadId);
       await refreshThreads();
-      setActiveThreadId(result.thread_id);
+      markThreadUsed(result.thread_id);
     } catch (e) {
       alert("Branch failed: " + (e instanceof Error ? e.message : String(e)));
     }
@@ -317,7 +353,7 @@ export default function App() {
           }
         >
           <div className="space-y-1">
-            {agents.map((a) => (
+            {sortedAgents.map((a) => (
               <button
                 key={a.agent_id}
                 type="button"
@@ -346,11 +382,11 @@ export default function App() {
           }
         >
           <div className="space-y-1">
-            {threads.map((t) => (
+            {sortedThreads.map((t) => (
               <div key={t.thread_id} className="group relative flex items-center rounded px-1 py-1 has-[[data-thread-menu]]:bg-slate-50">
                 <button
                   type="button"
-                  onClick={() => setActiveThreadId(t.thread_id)}
+                  onClick={() => markThreadUsed(t.thread_id)}
                   className={`flex-1 rounded px-1.5 py-1 text-left text-xs ${
                     t.thread_id === activeThreadId ? "bg-slate-100 font-medium" : "hover:bg-slate-50"
                   }`}
