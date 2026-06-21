@@ -221,6 +221,7 @@ export function usePinScrollBottom(
   }, [disableAutoFollow]);
 
   useEffect(() => {
+    if (followResetKey < 0) return; // sentinel: suppress auto-follow for non-live panels
     if (followResetKey === prevResetKeyRef.current) return;
     prevResetKeyRef.current = followResetKey;
     console.log(prefix, "ON ← followResetKey:", prevResetKeyRef.current);

@@ -350,7 +350,7 @@ export const ConversationRoundView = memo(function ConversationRoundView({
         live={activityLive}
         streamDraft={activityLive ? streamDraft : null}
         model={round.model ?? (activityLive ? activeTurnModel : null)}
-        followResetKey={isLastRound ? followResetKey : 0}
+        followResetKey={isLastRound ? followResetKey : -1}
         onStreamGrowth={activityLive ? onStreamGrowth : undefined}
       />
       {round.final && (
