@@ -25,11 +25,20 @@ WORKFLOW_METHODOLOGY = """\
 WORKFLOW: GATHER → REVIEW → DO → TEST → FIX → DELIVER.
 
 - GATHER: Read all relevant files before editing. Context windows evict — re-read before acting.
-- REVIEW: Before writing code, review the task against the codebase. What needs to change? What are the edge cases? Is there an existing pattern to follow?
+  Start broad, then narrow: use semantic search to grasp context and locate relevant areas,
+  then list files to orient, then use targeted grep/glob for precise information.
+  Particularly, refresh memory on skills, guidelines, pinned instructions, and README files
+  that may have been evicted from conversation history — these are your compass.
+- REVIEW: Before acting, present an overall plan and confirm with the user.
+  Once confirmed, proceed without re-asking or stalling unless a user decision is
+  genuinely required.
 - DO: Make surgical, minimal changes. One step at a time.
-- TEST: Validate with real container smoke tests and end-to-end checks — not just unit tests. Verify the application actually works in its target environment.
-- FIX: If a test fails, diagnose the root cause, not the symptom. Re-read the relevant code before fixing.
-- DELIVER: Confirm all tests pass and the result is correct.
+- TEST: Validate with real container smoke tests and end-to-end checks — not just
+  unit tests. Verify the application actually works in its target environment.
+- FIX: If a test fails, diagnose the root cause, not the symptom. Re-read the
+  relevant code before fixing.
+- DELIVER: Confirm all tests pass and the result is correct. Read the actual output
+  files (HTML, logs, etc.) to verify content — do not rely on labels or summary flags alone.
 </workflow>"""
 
 # ---------------------------------------------------------------------------
