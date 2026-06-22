@@ -1,12 +1,12 @@
 import { memo, useRef, useState, type ReactNode } from "react";
 import type { Message, StreamDraft } from "../types/api";
 import type { ConversationRound } from "../lib/groupRounds";
-import { messageDedupeKey, messageStableKey, roundStableKey } from "../lib/groupRounds";
+import { messageStableKey, roundStableKey } from "../lib/groupRounds";
 import { modelLabel } from "../lib/modelLabel";
 import { stripUserMessageWrapper } from "../lib/stripWrapper";
-import { usePinScrollBottom } from "../hooks/usePinScrollBottom";
 import { StreamingTypewriterText } from "./StreamingTypewriterText";
 import { TypewriterText } from "./TypewriterText";
+import ScrollToBottom from "react-scroll-to-bottom";
 
 const ACTIVITY_MAX_H = "max-h-48";
 const AGENT_CONTENT_MAX_W = "min-w-0 w-full max-w-[90%]";
@@ -120,12 +120,10 @@ function StreamPreviewBlock({
   draft,
   live,
   model,
-  onReveal,
 }: {
   draft: StreamDraft;
   live: boolean;
   model?: string | null;
-  onReveal?: () => void;
 }) {
   const streamSessionRef = useRef("");
   if (live && !streamSessionRef.current) {
@@ -157,7 +155,6 @@ function StreamPreviewBlock({
             live={live}
             sessionKey={`${streamSession}:reasoning`}
             cursorClassName="bg-violet-400"
-            onReveal={onReveal}
           />
         </ThoughtBlock>
       )}
@@ -174,7 +171,6 @@ function StreamPreviewBlock({
             live={live}
             sessionKey={`${streamSession}:content`}
             cursorClassName="bg-amber-500"
-            onReveal={onReveal}
           />
         </div>
       )}
@@ -187,39 +183,17 @@ function AgentActivityBlock({
   live = false,
   streamDraft = null,
   model = null,
-  followResetKey = 0,
-  onStreamGrowth,
 }: {
   activity: Message[];
   live?: boolean;
   streamDraft?: StreamDraft | null;
   model?: string | null;
-  followResetKey?: number;
-  onStreamGrowth?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const tailKey =
-    activity.length > 0 ? messageDedupeKey(activity[activity.length - 1], activity.length - 1) : "";
-
-  // Inner activity panel scroll — separate auto-follow; shares followResetKey with outer on send.
-  const { scrollRef, endRef, onScroll, jumpToBottom, isAutoFollow, notifyContentGrowth, pinnedRef } =
-    usePinScrollBottom(
-      [
-        activity.length,
-        tailKey,
-        streamDraft?.content?.length ?? 0,
-        streamDraft?.reasoning?.length ?? 0,
-      ],
-      followResetKey,
-      "inner",
-    );
-
-  const onDraftReveal = () => {
-    notifyContentGrowth();
-    if (live && pinnedRef.current) onStreamGrowth?.();
-  };
 
   if (!activity.length && !streamDraft) return null;
+
+  const followBtnClass = "!pointer-events-auto !absolute !bottom-2 !left-1/2 !z-10 !-translate-x-1/2 !rounded-full !border !border-slate-200 !bg-white !px-3 !py-1 !text-xs !text-slate-600 !shadow hover:!bg-slate-50 !w-auto !h-auto";
 
   return (
     <div className={`my-2 ${AGENT_CONTENT_MAX_W}`}>
@@ -238,31 +212,22 @@ function AgentActivityBlock({
             <span>{expanded ? "Collapse ▾" : "Expand ▸"}</span>
           </span>
         </button>
-        <div className="relative border-t border-slate-200/80">
-          <div
-            ref={scrollRef}
-            onScroll={onScroll}
-            className={`overflow-x-hidden overflow-y-auto px-3 pb-3 pt-2 space-y-2 ${
+        <div className="border-t border-slate-200/80">
+          <ScrollToBottom
+            mode="bottom"
+            className="relative"
+            scrollViewClassName={`overflow-x-hidden px-3 pb-3 pt-2 space-y-2 ${
               expanded ? "max-h-[70vh]" : ACTIVITY_MAX_H
             }`}
+            followButtonClassName={followBtnClass}
           >
             {activity.map((msg, i) => (
               <ActivityMessage key={messageStableKey(msg, i)} msg={msg} />
             ))}
             {live && streamDraft && (
-              <StreamPreviewBlock draft={streamDraft} live={live} model={model} onReveal={onDraftReveal} />
+              <StreamPreviewBlock draft={streamDraft} live={live} model={model} />
             )}
-            <div ref={endRef} />
-          </div>
-          {!isAutoFollow ? (
-            <button
-              type="button"
-              onClick={jumpToBottom}
-              className="pointer-events-auto absolute bottom-2 left-1/2 z-10 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600 shadow hover:bg-slate-50"
-            >
-              Latest
-            </button>
-          ) : null}
+          </ScrollToBottom>
         </div>
       </div>
     </div>
@@ -310,9 +275,7 @@ export const ConversationRoundView = memo(function ConversationRoundView({
   isLastRound,
   threadActive,
   streamDraft = null,
-  followResetKey = 0,
   activeTurnModel = null,
-  onStreamGrowth,
 }: {
   round: ConversationRound;
   roundIndex: number;
@@ -320,9 +283,7 @@ export const ConversationRoundView = memo(function ConversationRoundView({
   isLastRound: boolean;
   threadActive: boolean;
   streamDraft?: StreamDraft | null;
-  followResetKey?: number;
   activeTurnModel?: string | null;
-  onStreamGrowth?: () => void;
 }) {
   const finalKey =
     round.final != null ? messageStableKey(round.final, roundIndex * 1000 + 999) : null;
@@ -350,8 +311,6 @@ export const ConversationRoundView = memo(function ConversationRoundView({
         live={activityLive}
         streamDraft={activityLive ? streamDraft : null}
         model={round.model ?? (activityLive ? activeTurnModel : null)}
-        followResetKey={isLastRound ? followResetKey : -1}
-        onStreamGrowth={activityLive ? onStreamGrowth : undefined}
       />
       {round.final && (
         <FinalReply msg={round.final} animate={shouldAnimate} model={round.model} />
@@ -394,17 +353,13 @@ export function ConversationLog({
   animateFinalKey,
   threadActive,
   streamDraft = null,
-  followResetKey = 0,
   activeTurnModel = null,
-  onStreamGrowth,
 }: {
   rounds: ConversationRound[];
   animateFinalKey: string | null;
   threadActive: boolean;
   streamDraft?: StreamDraft | null;
-  followResetKey?: number;
   activeTurnModel?: string | null;
-  onStreamGrowth?: () => void;
 }) {
   const lastIndex = rounds.length - 1;
   if (!rounds.length && threadActive && streamDraft) {
@@ -415,8 +370,6 @@ export function ConversationLog({
           live
           streamDraft={streamDraft}
           model={activeTurnModel}
-          followResetKey={followResetKey}
-          onStreamGrowth={onStreamGrowth}
         />
       </section>
     );
@@ -432,9 +385,7 @@ export function ConversationLog({
           isLastRound={i === lastIndex}
           threadActive={threadActive}
           streamDraft={i === lastIndex ? streamDraft : null}
-          followResetKey={followResetKey}
           activeTurnModel={activeTurnModel}
-          onStreamGrowth={onStreamGrowth}
         />
       ))}
     </>

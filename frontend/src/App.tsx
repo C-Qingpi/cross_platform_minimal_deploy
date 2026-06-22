@@ -43,7 +43,6 @@ export default function App() {
   const [expandedPanel, setExpandedPanel] = useState<ExpandedPanel>(null);
   const [animateFinalKey, setAnimateFinalKey] = useState<string | null>(null);
   const [createAgentOpen, setCreateAgentOpen] = useState(false);
-  const [scrollFollowReset, setScrollFollowReset] = useState(0);
   const [wrappingEnabled, setWrappingEnabled] = useState(true);
   const [menuOpenThreadId, setMenuOpenThreadId] = useState<string | null>(null);
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
@@ -233,7 +232,6 @@ export default function App() {
     if (!draft.trim()) return;
     const content = draft.trim();
     clearDraft();
-    setScrollFollowReset((k) => k + 1);
     markAgentMessage(activeAgentId);
     markThreadMessage(activeAgentId, activeThreadId);
     await api.sendMessage(activeAgentId, activeThreadId, content);
@@ -506,7 +504,6 @@ export default function App() {
           threadActive={threadActive}
           streamDraft={streamDraft}
           activeTurnModel={activeTurnModel}
-          followResetKey={scrollFollowReset}
           onLoadOlder={loadOlder}
         />
 
