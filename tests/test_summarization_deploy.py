@@ -79,8 +79,8 @@ def test_deploy_unified_sdk_policy():
                                     prefetch_policy=STANDARD_PREFETCH_POLICY) is None
     assert evaluate_prefetch_policy(STANDARD_POLICY, msgs(166), 0, None,
                                     prefetch_policy=STANDARD_PREFETCH_POLICY) is not None
-    # STANDARD_POLICY fires at 240 messages, keeps 50
+    # STANDARD_POLICY fires at 240 messages, keeps 60
     assert evaluate_policy(STANDARD_POLICY, msgs(240), 0, None) is None
     decision = evaluate_policy(STANDARD_POLICY, msgs(241), 0, None)
     assert decision is not None
-    assert decision.keep_last_messages == 50
+    assert decision.keep_last_messages == 60
