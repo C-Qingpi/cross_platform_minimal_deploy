@@ -214,7 +214,7 @@ function AgentActivityBlock({
         </button>
         <div className="border-t border-slate-200/80">
           <ScrollToBottom
-            mode="bottom"
+            mode={live ? "bottom" : undefined}
             className="relative"
             scrollViewClassName={`overflow-x-hidden px-3 pb-3 pt-2 space-y-2 ${
               expanded ? "max-h-[70vh]" : ACTIVITY_MAX_H

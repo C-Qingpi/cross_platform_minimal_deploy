@@ -97,4 +97,4 @@ export interface MessagesResponse {
   active_turn_model?: string | null;
 }
 
-export const CHAT_PAGE_SIZE = 500;
+export const CHAT_PAGE_SIZE = 200;
