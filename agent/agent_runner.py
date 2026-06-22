@@ -157,18 +157,6 @@ def _make_llm_stream_handler(agent_id: str, workspace: Path):
     return handler
 
 
-def _deploy_summarization_config():
-    from arion_agent.summarization.config import SummarizationConfig, SummarizationPolicy
-
-    return SummarizationConfig(
-        policy=SummarizationPolicy(
-            prefetch_messages=150,
-            trigger_messages=225,
-            keep_messages=50,
-        ),
-    )
-
-
 def _is_dev_deploy() -> bool:
     return os.environ.get("ARION_DEPLOY_MODE", "").strip().lower() == "dev"
 
@@ -224,7 +212,6 @@ def create_agent_instance(agent_id: str, model_spec: str) -> object:
         deep_memory=DEFAULT_DEEPMEMORY,
         pinned_instructions=WORKFLOW_METHODOLOGY,
         subagents=None,
-        summarization=_deploy_summarization_config(),
         planning=False,
         mounts=mounts if mounts else None,
         confinement="none",

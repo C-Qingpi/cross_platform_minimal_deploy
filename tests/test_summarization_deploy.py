@@ -66,23 +66,21 @@ def test_arion_core_exports_prefetch():
         assert STANDARD_POLICY is not None
 
 
-def test_deploy_message_count_summarization_policy():
-    from agent_runner import _deploy_summarization_config
+def test_deploy_unified_sdk_policy():
+    """Deploy no longer overrides summarization; verify SDK STANDARD_POLICY matches spec."""
     from arion_agent.summarization.compress import evaluate_policy, evaluate_prefetch_policy
-    from arion_agent.summarization.config import SummarizationPolicy
+    from arion_agent.summarization.policies import STANDARD_POLICY, STANDARD_PREFETCH_POLICY
     from langchain_core.messages import HumanMessage
-
-    policy = _deploy_summarization_config().policy
-    assert isinstance(policy, SummarizationPolicy)
-    assert policy.prefetch_messages == 150
-    assert policy.trigger_messages == 225
-    assert policy.keep_messages == 50
 
     msgs = lambda n: [HumanMessage(content=f"h{i}") for i in range(n)]
 
-    assert evaluate_prefetch_policy(policy, msgs(150), 0, None) is None
-    assert evaluate_prefetch_policy(policy, msgs(151), 0, None) is not None
-    assert evaluate_policy(policy, msgs(225), 0, None) is None
-    decision = evaluate_policy(policy, msgs(226), 0, None)
+    # STANDARD_PREFETCH_POLICY fires at 165 messages
+    assert evaluate_prefetch_policy(STANDARD_POLICY, msgs(165), 0, None,
+                                    prefetch_policy=STANDARD_PREFETCH_POLICY) is None
+    assert evaluate_prefetch_policy(STANDARD_POLICY, msgs(166), 0, None,
+                                    prefetch_policy=STANDARD_PREFETCH_POLICY) is not None
+    # STANDARD_POLICY fires at 240 messages, keeps 50
+    assert evaluate_policy(STANDARD_POLICY, msgs(240), 0, None) is None
+    decision = evaluate_policy(STANDARD_POLICY, msgs(241), 0, None)
     assert decision is not None
     assert decision.keep_last_messages == 50
