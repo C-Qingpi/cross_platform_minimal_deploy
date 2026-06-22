@@ -47,6 +47,8 @@ export default function App() {
   const [menuOpenThreadId, setMenuOpenThreadId] = useState<string | null>(null);
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [sortVersion, setSortVersion] = useState(0);
+  const [hamburgerOpen, setHamburgerOpen] = useState(false);
+  const [summaryDialogOpen, setSummaryDialogOpen] = useState(false);
 
   const knownFinalKeysRef = useRef<Set<string>>(new Set());
   const contextRef = useRef("");
@@ -178,6 +180,22 @@ export default function App() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [menuOpenThreadId]);
+
+  // Close hamburger menu and summary dialog when clicking outside
+  useEffect(() => {
+    if (!hamburgerOpen && !summaryDialogOpen) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (hamburgerOpen && !target.closest('[data-hamburger]') && !target.closest('[data-hamburger-menu]')) {
+        setHamburgerOpen(false);
+      }
+      if (summaryDialogOpen && !target.closest('[data-summary-dialog]') && !target.closest('[data-summary-btn]')) {
+        setSummaryDialogOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [hamburgerOpen, summaryDialogOpen]);
 
   useEffect(() => {
     if (pendingModelRef.current) {
@@ -464,38 +482,70 @@ export default function App() {
                 {threadStatus === "summarizing" ? "summarizing" : "running"}
               </span>
             )}
-            <label className="flex items-center gap-1.5 cursor-pointer select-none" title={wrappingEnabled ? "User messages are wrapped (RECEIVED FROM USER: ...)" : "User messages sent raw, no wrapping"}>
-              <span className="text-xs text-slate-500">Wrap</span>
+            {/* Hamburger menu */}
+            <div className="relative">
               <button
                 type="button"
-                role="switch"
-                aria-checked={wrappingEnabled}
-                onClick={handleWrappingToggle}
-                className={`relative inline-flex h-4 w-7 shrink-0 rounded-full border transition-colors ${
-                  wrappingEnabled ? "bg-indigo-500 border-indigo-500" : "bg-slate-200 border-slate-300"
-                }`}
+                data-hamburger="true"
+                onClick={() => setHamburgerOpen((v) => !v)}
+                className="rounded-md px-2 py-1 text-sm text-slate-600 hover:bg-slate-100"
+                title="Menu"
               >
-                <span
-                  className={`inline-block h-3 w-3 rounded-full bg-white shadow transition-transform ${
-                    wrappingEnabled ? "translate-x-3.5" : "translate-x-0.5"
-                  }`}
-                />
+                ⋮
               </button>
-            </label>
-            <button
-              type="button"
-              onClick={handleResetSearchIndex}
-              className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
-              title="Clear semantic search index and rebuild from workspace"
-            >
-              Reset index
-            </button>
+              {hamburgerOpen && (
+                <div
+                  data-hamburger-menu="true"
+                  className="absolute right-0 top-full z-50 mt-1 w-52 rounded-lg border border-slate-200 bg-white py-2 shadow-lg"
+                >
+                  {/* Compaction Summary */}
+                  <button
+                    type="button"
+                    data-summary-btn="true"
+                    onClick={() => { setSummaryDialogOpen(true); setHamburgerOpen(false); }}
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-100"
+                    disabled={!summary}
+                  >
+                    📋 Compaction Summary
+                  </button>
+                  <hr className="my-1 mx-2 border-slate-100" />
+                  {/* Wrap toggle */}
+                  <label className="flex items-center justify-between px-3 py-1.5 cursor-pointer select-none" title={wrappingEnabled ? "User messages are wrapped (RECEIVED FROM USER: ...)" : "User messages sent raw, no wrapping"}>
+                    <span className="text-xs text-slate-700">Wrap messages</span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={wrappingEnabled}
+                      onClick={handleWrappingToggle}
+                      className={`relative inline-flex h-4 w-7 shrink-0 rounded-full border transition-colors ${
+                        wrappingEnabled ? "bg-indigo-500 border-indigo-500" : "bg-slate-200 border-slate-300"
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-3 w-3 rounded-full bg-white shadow transition-transform ${
+                          wrappingEnabled ? "translate-x-3.5" : "translate-x-0.5"
+                        }`}
+                      />
+                    </button>
+                  </label>
+                  <hr className="my-1 mx-2 border-slate-100" />
+                  {/* Reset index */}
+                  <button
+                    type="button"
+                    onClick={() => { handleResetSearchIndex(); setHamburgerOpen(false); }}
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-100"
+                    title="Clear semantic search index and rebuild from workspace"
+                  >
+                    🔄 Reset search index
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
         <PaginatedConversationLog
           rounds={rounds}
-          summary={summary}
           animateFinalKey={animateFinalKey}
           hasOlder={hasOlder}
           loadingOlder={loadingOlder}
@@ -577,6 +627,34 @@ export default function App() {
           </div>
         );
       })()}
+
+      {/* Summary dialog */}
+      {summaryDialogOpen && summary && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+          onClick={() => setSummaryDialogOpen(false)}
+        >
+          <div
+            data-summary-dialog="true"
+            className="mx-4 w-full max-w-xl max-h-[70vh] overflow-y-auto rounded-xl border border-slate-200 bg-white p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-slate-800">Compaction Summary</h3>
+              <button
+                type="button"
+                onClick={() => setSummaryDialogOpen(false)}
+                className="rounded-md px-2 py-0.5 text-sm text-slate-500 hover:bg-slate-100"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="whitespace-pre-wrap text-sm text-slate-700 leading-relaxed">
+              {summary}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

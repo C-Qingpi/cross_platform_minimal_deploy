@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import type { ConversationRound } from "../lib/groupRounds";
-import { ConversationLog, SummaryBanner } from "./LogViewer";
+import { ConversationLog } from "./LogViewer";
 import type { StreamDraft } from "../types/api";
 import ScrollToBottom, { useObserveScrollPosition } from "react-scroll-to-bottom";
 
@@ -49,7 +49,6 @@ function ScrollPositionObserver({
 
 export function PaginatedConversationLog({
   rounds,
-  summary,
   animateFinalKey,
   hasOlder,
   loadingOlder,
@@ -61,7 +60,6 @@ export function PaginatedConversationLog({
   onLoadOlder,
 }: {
   rounds: ConversationRound[];
-  summary: string;
   animateFinalKey: string | null;
   hasOlder: boolean;
   loadingOlder: boolean;
@@ -82,8 +80,6 @@ export function PaginatedConversationLog({
       followButtonClassName="!absolute !bottom-4 !left-1/2 !z-10 !-translate-x-1/2 !rounded-full !border !border-slate-200 !bg-white !px-4 !py-1.5 !text-sm !text-slate-700 !shadow-md hover:!bg-slate-50 !w-auto !h-auto"
     >
       <div className="mx-auto w-full min-w-0 max-w-3xl">
-        <SummaryBanner summary={summary} />
-
         {(hasOlder || loadingOlder) && (
           <div className="mb-3 text-center text-xs text-slate-500">
             {loadingOlder
