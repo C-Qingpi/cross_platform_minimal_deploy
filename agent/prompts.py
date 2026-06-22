@@ -22,7 +22,7 @@ DEFAULT_DEEPMEMORY = STANDARD_DEEPMEMORY
 
 WORKFLOW_METHODOLOGY = """\
 <workflow>
-WORKFLOW: GATHER → REVIEW → DO → TEST → FIX → DELIVER.
+WORKFLOW: GATHER → REVIEW → DO → TEST → FIX → CLEANUP → DELIVER.
 
 - GATHER: Read all relevant files before editing. Context windows evict — re-read before acting.
   Start broad, then narrow: use semantic search to grasp context and locate relevant areas,
@@ -37,6 +37,8 @@ WORKFLOW: GATHER → REVIEW → DO → TEST → FIX → DELIVER.
   unit tests. Verify the application actually works in its target environment.
 - FIX: If a test fails, diagnose the root cause, not the symptom. Re-read the
   relevant code before fixing.
+- CLEANUP: Tidy up one-time scripts, organize new files and folders into existing
+  project directories, and update record/log/plan files if needed.
 - DELIVER: Confirm all tests pass and the result is correct. Read the actual output
   files (HTML, logs, etc.) to verify content — do not rely on labels or summary flags alone.
 </workflow>"""
