@@ -2,10 +2,9 @@ import { useRef } from "react";
 import type { ConversationRound } from "../lib/groupRounds";
 import { ConversationLog } from "./LogViewer";
 import type { StreamDraft } from "../types/api";
-import ScrollToBottom, { useObserveScrollPosition } from "react-scroll-to-bottom";
+import { ScrollContainer, useObserveScrollPosition, SCROLL_PANEL_CLASS } from "../lib/ScrollContainer";
 
 const LOAD_OLDER_THRESHOLD = 120;
-const SCROLL_PANEL_CLASS = "scroll-panel";
 
 function ScrollPositionObserver({
   hasOlder,
@@ -73,10 +72,9 @@ export function PaginatedConversationLog({
   const hiddenCount = Math.max(0, total - loadedCount);
 
   return (
-    <ScrollToBottom
-      mode="bottom"
+    <ScrollContainer
       className="relative flex min-h-0 min-w-0 flex-1 flex-col"
-      scrollViewClassName={`${SCROLL_PANEL_CLASS} px-4 py-3`}
+      scrollViewClassName={"px-4 py-3"}
       followButtonClassName="!absolute !bottom-4 !left-1/2 !z-10 !-translate-x-1/2 !rounded-full !border !border-slate-200 !bg-white !px-4 !py-1.5 !text-sm !text-slate-700 !shadow-md hover:!bg-slate-50 !w-auto !h-auto"
     >
       <div className="mx-auto w-full min-w-0 max-w-3xl">
@@ -99,6 +97,6 @@ export function PaginatedConversationLog({
         />
       </div>
       <ScrollPositionObserver hasOlder={hasOlder} loadingOlder={loadingOlder} onLoadOlder={onLoadOlder} />
-    </ScrollToBottom>
+    </ScrollContainer>
   );
 }

@@ -75,6 +75,66 @@ export default function App() {
   const threadActive = Boolean(agentState?.threads?.[activeThreadId]?.active);
   const threadStatus = agentState?.threads?.[activeThreadId]?.status;
   const { toast, showToast } = useEventToasts(activeAgentId, activeThreadId, agentState);
+
+  // ── Job-done audio ding (5 consecutive high-pitch beeps) ──────────
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const prevActiveIdsRef = useRef(new Set<string>());
+  useEffect(() => {
+    const threads = agentState?.threads ?? {};
+    const nowActive = new Set(Object.keys(threads).filter((tid) => threads[tid]?.active));
+    const prev = prevActiveIdsRef.current;
+
+    // Detect any thread that was active last poll but is now inactive
+    let justFinished = false;
+    for (const tid of prev) {
+      if (!nowActive.has(tid)) {
+        justFinished = true;
+        break;
+      }
+    }
+
+    prevActiveIdsRef.current = nowActive;
+
+    if (justFinished && prev.size > 0) {
+      try {
+        let ctx = audioCtxRef.current;
+        if (!ctx || ctx.state === "closed") {
+          ctx = new AudioContext();
+          audioCtxRef.current = ctx;
+        }
+        if (ctx.state === "suspended") {
+          void ctx.resume();
+        }
+        // Blues charm — ascending C blues scale lick with overlapping notes
+        const notes = [
+          { freq: 523, start: 0.00 },  // C5
+          { freq: 622, start: 0.13 },  // Eb5 ♭3
+          { freq: 698, start: 0.26 },  // F5
+          { freq: 740, start: 0.38 },  // Gb5 ♭5 — blue note
+          { freq: 784, start: 0.50 },  // G5
+          { freq: 1047, start: 0.63 }, // C6
+        ];
+        const vol = 0.25;
+        const ring = 0.35; // each note rings ~350ms (overlaps next)
+        for (const n of notes) {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = "sine";
+          osc.frequency.value = n.freq;
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          const t = ctx.currentTime + n.start;
+          osc.start(t);
+          osc.stop(t + ring);
+          gain.gain.setValueAtTime(vol, t);
+          gain.gain.exponentialRampToValueAtTime(0.001, t + ring);
+        }
+      } catch {
+        // AudioContext may not be available (e.g., no user gesture yet)
+      }
+    }
+  }, [agentState]);
+
   const rounds = useMemo(
     () => attachTurnModels(groupIntoRounds(messages), turnModels),
     [messages, turnModels],
@@ -92,14 +152,22 @@ export default function App() {
     if (!activeAgentId) return;
     const data = await api.fetchThreads(activeAgentId);
     setThreads(data);
-    const stored = localStorage.getItem(`${ACTIVE_THREAD_PREFIX}${activeAgentId}`);
-    const preferred = stored && data.find((t: ThreadInfo) => t.thread_id === stored);
-    if (preferred) {
-      setActiveThreadId(stored!);
-    } else if (!activeThreadId || !data.find((t: ThreadInfo) => t.thread_id === activeThreadId)) {
-      setActiveThreadId(data[0]?.thread_id || mainThread);
-    }
-  }, [activeAgentId, activeThreadId, mainThread]);
+    return data; // allow caller to use result for redirect decisions
+  }, [activeAgentId]);
+
+  const selectDefaultThread = useCallback(
+    (data: ThreadInfo[], force = false) => {
+      if (!data.length) return;
+      const stored = localStorage.getItem(`${ACTIVE_THREAD_PREFIX}${activeAgentId}`);
+      const preferred = stored && data.find((t) => t.thread_id === stored);
+      if (preferred) {
+        setActiveThreadId(stored!);
+      } else if (force || !activeThreadId || !data.find((t) => t.thread_id === activeThreadId)) {
+        setActiveThreadId(data[0].thread_id);
+      }
+    },
+    [activeAgentId, activeThreadId],
+  );
 
   useEffect(() => {
     refreshAgents();
@@ -107,8 +175,21 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem(ACTIVE_AGENT_KEY, activeAgentId);
-    refreshThreads();
-  }, [activeAgentId, refreshThreads]);
+    refreshThreads().then((data) => {
+      // Redirect on agent switch (initial load or explicit switch)
+      if (data) selectDefaultThread(data, true);
+    });
+  }, [activeAgentId, refreshThreads, selectDefaultThread]);
+
+  // ── Sidebar auto-poll (agents + threads — no redirect) ────────────
+  useEffect(() => {
+    const ms = threadActive ? 2000 : 5000;
+    const id = setInterval(() => {
+      refreshAgents();
+      refreshThreads(); // fetch + set only; selectDefaultThread is NOT called
+    }, ms);
+    return () => clearInterval(id);
+  }, [refreshAgents, refreshThreads, threadActive]);
 
   // Record last-used timestamp when switching agent or thread (click fallback)
   useEffect(() => {
@@ -319,7 +400,10 @@ export default function App() {
     }
     if (!confirm(`Delete thread ${threadId}?`)) return;
     await api.deleteThread(activeAgentId, threadId);
-    await refreshThreads();
+    const data = await refreshThreads();
+    if (data && activeThreadId === threadId) {
+      selectDefaultThread(data, true);
+    }
   };
 
   const handleBranchThread = async (threadId: string) => {

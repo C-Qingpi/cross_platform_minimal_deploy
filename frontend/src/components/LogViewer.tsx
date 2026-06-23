@@ -6,7 +6,7 @@ import { modelLabel } from "../lib/modelLabel";
 import { stripUserMessageWrapper } from "../lib/stripWrapper";
 import { StreamingTypewriterText } from "./StreamingTypewriterText";
 import { TypewriterText } from "./TypewriterText";
-import ScrollToBottom from "react-scroll-to-bottom";
+import { ScrollContainer } from "../lib/ScrollContainer";
 
 const ACTIVITY_MAX_H = "max-h-48";
 const AGENT_CONTENT_MAX_W = "min-w-0 w-full max-w-[90%]";
@@ -213,8 +213,7 @@ function AgentActivityBlock({
           </span>
         </button>
         <div className="border-t border-slate-200/80">
-          <ScrollToBottom
-            mode={live ? "bottom" : undefined}
+          <ScrollContainer
             className="relative"
             scrollViewClassName={`overflow-x-hidden px-3 pb-3 pt-2 space-y-2 ${
               expanded ? "max-h-[70vh]" : ACTIVITY_MAX_H
@@ -227,7 +226,7 @@ function AgentActivityBlock({
             {live && streamDraft && (
               <StreamPreviewBlock draft={streamDraft} live={live} model={model} />
             )}
-          </ScrollToBottom>
+          </ScrollContainer>
         </div>
       </div>
     </div>
