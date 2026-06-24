@@ -44,31 +44,43 @@ def load_task_models(
     return turn_models, task_models
 
 
-def _count_completed_rounds(messages: list[dict[str, Any]], start: int, end: int) -> int:
-    """Human turns with an AI reply in [start, end)."""
+def _count_completed_rounds(roles: list[tuple[str, int]], start: int, end: int) -> int:
+    """Human turns with an AI reply in [start, end).
+
+    `roles` is a list of (role, msg_index) tuples.
+    """
     count = 0
-    i = start
-    while i < end and i < len(messages):
-        if messages[i].get("type") == "human":
-            for j in range(i + 1, end):
-                if messages[j].get("type") == "ai":
+    i = 0
+    n = len(roles)
+    # Find the first message at or after `start`
+    while i < n and roles[i][1] < start:
+        i += 1
+    while i < n and roles[i][1] < end:
+        if roles[i][0] == "human":
+            for j in range(i + 1, n):
+                if roles[j][1] >= end:
+                    break
+                if roles[j][0] == "ai":
                     count += 1
                     break
-                if messages[j].get("type") == "human":
+                if roles[j][0] == "human":
                     break
         i += 1
     return count
 
 
 def slice_turn_models_for_window(
-    messages: list[dict[str, Any]],
+    roles: list[tuple[str, int]],
     start_index: int,
     end_index: int,
     turn_models: list[str],
 ) -> list[str]:
-    """Slice global completed models to match the paginated message window."""
-    completed_before = _count_completed_rounds(messages, 0, start_index)
-    completed_in_window = _count_completed_rounds(messages, start_index, end_index)
+    """Slice global completed models to match the paginated message window.
+
+    `roles` is a lightweight list of (role, msg_index) tuples — not full messages.
+    """
+    completed_before = _count_completed_rounds(roles, 0, start_index)
+    completed_in_window = _count_completed_rounds(roles, start_index, end_index)
     slice_end = completed_before + completed_in_window
     return turn_models[completed_before:slice_end]
 

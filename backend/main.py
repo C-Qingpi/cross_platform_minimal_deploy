@@ -282,14 +282,14 @@ async def get_messages(
     reader = _reader(agent_id)
     pending = _queue(agent_id).list_pending(tid)
     page = reader.get_messages_page(tid, limit=limit, before_index=before_index)
-    all_msgs = page.pop("_all_msgs", None)
+    roles = page.pop("_roles", [])
     thread_state = state_machine.get_agent_state(agent_id).get("threads", {}).get(tid, {})
     stream_draft = reader.get_stream_draft(tid) if thread_state.get("active") else None
     from turn_models import active_turn_model, load_task_models, slice_turn_models_for_window
 
     turn_models_full, task_models = load_task_models(events_file, agent_id, tid)
     turn_models = slice_turn_models_for_window(
-        all_msgs, page["start_index"], page["end_index"], turn_models_full,
+        roles, page["start_index"], page["end_index"], turn_models_full,
     )
     active_model = active_turn_model(task_models, thread_state.get("active_message_id"))
     return {

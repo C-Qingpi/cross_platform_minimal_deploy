@@ -119,20 +119,62 @@ class ArionReader:
 
     def _get_messages_from_log(self, thread_id: str) -> list[dict[str, Any]]:
         """Return all messages for a thread from the persistent message log."""
+        return self._get_messages_from_log_window(thread_id)
+
+    def _get_messages_from_log_window(
+        self,
+        thread_id: str,
+        limit: int = 0,
+        before_index: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return a window of messages from the persistent message log.
+
+        When limit=0 and before_index=None, returns all messages (legacy).
+        Uses SQL LIMIT/OFFSET — never loads the full table into Python
+        when paginated.
+        """
         db_path = self._message_log_db_path()
         if not db_path.exists():
             return []
         db = sqlite3.connect(str(db_path))
         try:
             self._ensure_message_log_table(db)
-            rows = db.execute(
-                "SELECT role, type, content, tool_calls, name, msg_id "
-                "FROM messages WHERE thread_id = ? ORDER BY msg_index",
-                (thread_id,),
-            ).fetchall()
+            if before_index is not None:
+                if limit:
+                    rows = db.execute(
+                        "SELECT role, type, content, tool_calls, name, msg_id "
+                        "FROM messages WHERE thread_id = ? AND msg_index < ? "
+                        "ORDER BY msg_index DESC LIMIT ?",
+                        (thread_id, before_index, limit),
+                    ).fetchall()
+                    rows.reverse()
+                else:
+                    rows = db.execute(
+                        "SELECT role, type, content, tool_calls, name, msg_id "
+                        "FROM messages WHERE thread_id = ? AND msg_index < ? "
+                        "ORDER BY msg_index",
+                        (thread_id, before_index),
+                    ).fetchall()
+            elif limit:
+                rows = db.execute(
+                    "SELECT role, type, content, tool_calls, name, msg_id "
+                    "FROM messages WHERE thread_id = ? "
+                    "ORDER BY msg_index DESC LIMIT ?",
+                    (thread_id, limit),
+                ).fetchall()
+                rows.reverse()
+            else:
+                rows = db.execute(
+                    "SELECT role, type, content, tool_calls, name, msg_id "
+                    "FROM messages WHERE thread_id = ? ORDER BY msg_index",
+                    (thread_id,),
+                ).fetchall()
         finally:
             db.close()
+        return self._rows_to_messages(rows)
 
+    @staticmethod
+    def _rows_to_messages(rows: list[tuple]) -> list[dict[str, Any]]:
         messages: list[dict[str, Any]] = []
         for role, mtype, content_str, tool_calls_str, name, msg_id in rows:
             msg: dict[str, Any] = {
@@ -150,6 +192,51 @@ class ArionReader:
                     pass
             messages.append(msg)
         return messages
+
+    def _count_messages_in_log(self, thread_id: str) -> int:
+        """Return the total number of messages for a thread."""
+        db_path = self._message_log_db_path()
+        if not db_path.exists():
+            return 0
+        db = sqlite3.connect(str(db_path))
+        try:
+            self._ensure_message_log_table(db)
+            return db.execute(
+                "SELECT COUNT(*) FROM messages WHERE thread_id = ?",
+                (thread_id,),
+            ).fetchone()[0]
+        finally:
+            db.close()
+
+    def _get_message_roles(
+        self, thread_id: str, before_index: int | None = None,
+    ) -> list[tuple[str, int]]:
+        """Return lightweight (role, msg_index) pairs for turn counting.
+
+        Reads only two columns — even for 30K messages this is ~300KB,
+        vs multi-MB for full message content.
+        """
+        db_path = self._message_log_db_path()
+        if not db_path.exists():
+            return []
+        db = sqlite3.connect(str(db_path))
+        try:
+            self._ensure_message_log_table(db)
+            if before_index is not None:
+                rows = db.execute(
+                    "SELECT role, msg_index FROM messages "
+                    "WHERE thread_id = ? AND msg_index < ? ORDER BY msg_index",
+                    (thread_id, before_index),
+                ).fetchall()
+            else:
+                rows = db.execute(
+                    "SELECT role, msg_index FROM messages "
+                    "WHERE thread_id = ? ORDER BY msg_index",
+                    (thread_id,),
+                ).fetchall()
+            return [(r, i) for r, i in rows]
+        finally:
+            db.close()
 
     def _bootstrap_message_log(self, thread_id: str) -> int:
         """One-time bootstrap: copy display_log (full history) into message_log.db."""
@@ -333,21 +420,37 @@ class ArionReader:
         limit: int = 500,
         before_index: int | None = None,
     ) -> dict[str, Any]:
-        all_msgs = self.get_all_messages(thread_id)
-        total = len(all_msgs)
+        # 1. Bootstrap / sync (idempotent)
+        self._bootstrap_message_log(thread_id)
+        self._sync_to_message_log(thread_id)
+
+        # 2. Count total from SQL (O(1), not O(n))
+        total = self._count_messages_in_log(thread_id)
+
+        # 3. Compute window
         if before_index is None:
             start = max(0, total - limit)
             end = total
         else:
             end = max(0, min(before_index, total))
             start = max(0, end - limit)
+
+        # 4. Load only the window from SQL (never the full list)
+        window_limit = end - start
+        window_messages = self._get_messages_from_log_window(
+            thread_id, limit=window_limit, before_index=end,
+        ) if window_limit > 0 else []
+
+        # 5. Lightweight role list for turn_models slicing (two columns only)
+        roles = self._get_message_roles(thread_id)
+
         return {
-            "messages": all_msgs[start:end],
+            "messages": window_messages,
             "total": total,
             "start_index": start,
             "end_index": end,
             "has_older": start > 0,
-            "_all_msgs": all_msgs,  # internal — pop before sending to client
+            "_roles": roles,  # internal — pop before sending to client
         }
 
     def get_messages(self, thread_id: str, limit: int = 200) -> list[dict[str, Any]]:
