@@ -10,15 +10,26 @@ export const DEFAULT_NUM_PAGES = 3;
 
 /** Merge a fresh tail page into currently-loaded messages.
  *
- *  When the user is near the live tail (no older pages loaded), we
- *  simply replace with the fresh tail. Otherwise we keep the current
- *  window unchanged — loadOlder will handle extending it.
+ *  Compare the tail message IDs — if the tail content changed (new
+ *  message at the end), always accept the fresh page.  Otherwise keep
+ *  loaded when it has older pages that the fresh tail doesn't include
+ *  (loadOlder will handle extending).
  */
 export function mergeTailIntoWindow(
   loaded: Message[],
   page: MessagePage,
 ): Message[] {
-  // If loaded window is same or longer, keep it (user may have loaded older pages)
+  if (!page.messages.length) return loaded;
+
+  const tailLoaded = loaded[loaded.length - 1];
+  const tailPage = page.messages[page.messages.length - 1];
+
+  // Tail changed? Always accept the fresh page (new message arrived).
+  if (!tailLoaded || tailLoaded.id !== tailPage.id) {
+    return page.messages;
+  }
+
+  // Same tail — keep loaded if it has older pages the page doesn't.
   if (loaded.length >= page.messages.length) {
     return loaded;
   }
