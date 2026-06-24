@@ -1,5 +1,5 @@
-import type { EventsResponse, MessagesResponse } from "../types/api";
-import { CHAT_PAGE_SIZE } from "../types/api";
+import type { AgentInfo, AgentState, EventsResponse, MessagesResponse, ThreadInfo } from "../types/api";
+import { DEFAULT_NUM_PAGES } from "../lib/mergeMessages";
 
 const qs = (params: Record<string, string | undefined>) => {
   const p = new URLSearchParams();
@@ -53,9 +53,9 @@ export async function fetchDefaultWorkspace(agentId: string): Promise<string> {
   return data.path;
 }
 
-export async function fetchAgents() {
+export async function fetchAgents(): Promise<AgentInfo[]> {
   const res = await fetch("/api/agents");
-  return safeJson(res, "Failed to load agents");
+  return safeJson<AgentInfo[]>(res, "Failed to load agents");
 }
 
 export async function createAgent(body: {
@@ -63,84 +63,84 @@ export async function createAgent(body: {
   workspace?: string;
   model?: string;
   mounts?: { name: string; path: string }[];
-}) {
+}): Promise<{ status: string; agent_id: string; workspace: string; error?: string }> {
   const res = await fetch("/api/agents", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  return safeJson(res, "Failed to create agent");
+  return safeJson<{ status: string; agent_id: string; workspace: string }>(res, "Failed to create agent");
 }
 
-export async function deleteAgent(agentId: string) {
+export async function deleteAgent(agentId: string): Promise<{ status: string; agent_id: string }> {
   const res = await fetch(`/api/agents/${encodeURIComponent(agentId)}`, { method: "DELETE" });
-  return safeJson(res, "Failed to delete agent");
+  return safeJson<{ status: string; agent_id: string }>(res, "Failed to delete agent");
 }
 
-export async function fetchAgentState(agentId: string) {
+export async function fetchAgentState(agentId: string): Promise<AgentState> {
   const res = await fetch(`/api/agent/state${qs({ agent_id: agentId })}`);
-  return safeJson(res, "Failed to load agent state");
+  return safeJson<AgentState>(res, "Failed to load agent state");
 }
 
 export async function fetchMessages(
   agentId: string,
   threadId: string,
-  options?: { limit?: number; beforeIndex?: number },
+  options?: { numPages?: number; beforeCheckpointId?: string },
 ): Promise<MessagesResponse> {
   const params: Record<string, string | undefined> = {
     agent_id: agentId,
     thread_id: threadId,
-    limit: String(options?.limit ?? CHAT_PAGE_SIZE),
+    num_pages: String(options?.numPages ?? DEFAULT_NUM_PAGES),
   };
-  if (options?.beforeIndex !== undefined) {
-    params.before_index = String(options.beforeIndex);
+  if (options?.beforeCheckpointId) {
+    params.before_checkpoint_id = options.beforeCheckpointId;
   }
   const res = await fetch(`/api/messages${qs(params)}`);
   return safeJson(res, "Failed to load messages");
 }
 
-export async function sendMessage(agentId: string, threadId: string, content: string) {
+export async function sendMessage(agentId: string, threadId: string, content: string): Promise<{ status: string }> {
   const res = await fetch(`/api/messages${qs({ agent_id: agentId })}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ content, thread_id: threadId }),
   });
-  return safeJson(res, "Failed to send message");
+  return safeJson<{ status: string }>(res, "Failed to send message");
 }
 
-export async function stopChat(agentId: string, threadId: string) {
+export async function stopChat(agentId: string, threadId: string): Promise<{ status: string }> {
   const res = await fetch(`/api/agent/stop${qs({ agent_id: agentId, thread_id: threadId })}`, { method: "POST" });
-  return safeJson(res, "Stop request failed");
+  return safeJson<{ status: string }>(res, "Stop request failed");
 }
 
-export async function switchModel(agentId: string, model: string, threadId?: string) {
+export async function switchModel(agentId: string, model: string, threadId?: string): Promise<{ status: string; agent_id: string; model: string }> {
   const res = await fetch(`/api/agent/model${qs({ agent_id: agentId })}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ model, thread_id: threadId }),
   });
-  return safeJson(res, "Failed to switch model");
+  return safeJson<{ status: string; agent_id: string; model: string }>(res, "Failed to switch model");
 }
 
-export async function fetchThreads(agentId: string) {
+export async function fetchThreads(agentId: string): Promise<ThreadInfo[]> {
   const res = await fetch(`/api/threads${qs({ agent_id: agentId })}`);
-  return safeJson(res, "Failed to load threads");
+  return safeJson<ThreadInfo[]>(res, "Failed to load threads");
 }
 
-export async function createThread(agentId: string, threadId: string, name?: string) {
+export async function createThread(agentId: string, threadId: string, name?: string): Promise<{ status: string; thread_id: string }> {
   const res = await fetch(`/api/threads${qs({ agent_id: agentId })}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ thread_id: threadId, name }),
   });
-  return safeJson(res, "Failed to create thread");
+  return safeJson<{ status: string; thread_id: string }>(res, "Failed to create thread");
 }
 
-export async function deleteThread(agentId: string, threadId: string) {
+export async function deleteThread(agentId: string, threadId: string): Promise<{ status: string; thread_id: string }> {
   const res = await fetch(`/api/threads/${encodeURIComponent(threadId)}${qs({ agent_id: agentId })}`, {
     method: "DELETE",
   });
-  return safeJson(res, "Failed to delete thread");
+  return safeJson<{ status: string; thread_id: string }>(res, "Failed to delete thread");
 }
 
 export async function branchThread(agentId: string, threadId: string) {
@@ -150,13 +150,13 @@ export async function branchThread(agentId: string, threadId: string) {
   return safeJson<{ status: string; thread_id: string; name: string }>(res, "Failed to branch thread");
 }
 
-export async function renameThread(agentId: string, threadId: string, name: string) {
+export async function renameThread(agentId: string, threadId: string, name: string): Promise<{ status: string; thread_id: string }> {
   const res = await fetch(`/api/threads/${encodeURIComponent(threadId)}/rename${qs({ agent_id: agentId })}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name }),
   });
-  return safeJson(res, "Failed to rename thread");
+  return safeJson<{ status: string; thread_id: string }>(res, "Failed to rename thread");
 }
 
 export async function fetchEvents(afterIndex = 0, agentId?: string): Promise<EventsResponse> {
@@ -168,16 +168,16 @@ export async function fetchEvents(afterIndex = 0, agentId?: string): Promise<Eve
   return safeJson(res, "Failed to load events");
 }
 
-export async function setThreadWrapping(agentId: string, threadId: string, enabled: boolean) {
+export async function setThreadWrapping(agentId: string, threadId: string, enabled: boolean): Promise<{ status: string }> {
   const res = await fetch(`/api/thread/wrapping${qs({ agent_id: agentId, thread_id: threadId, enabled: String(enabled) })}`, {
     method: "POST",
   });
-  return safeJson(res, "Failed to set thread wrapping");
+  return safeJson<{ status: string }>(res, "Failed to set thread wrapping");
 }
 
-export async function fetchConfig() {
+export async function fetchConfig(): Promise<{ model: string; providers: Record<string, Record<string, string>> }> {
   const res = await fetch("/api/config");
-  return safeJson(res, "Failed to load config");
+  return safeJson<{ model: string; providers: Record<string, Record<string, string>> }>(res, "Failed to load config");
 }
 
 export async function resetSearchIndex(agentId: string) {

@@ -33,7 +33,7 @@ const ScrollCtx = createContext<{
  * Subscribes when observer is truthy, unsubscribes on cleanup.
  */
 export function useObserveScrollPosition(
-  observer: ((pos: { scrollTop: number; scrollHeight: number }) => void) | null,
+  observer: ((pos: { scrollTop: number; scrollHeight: number; clientHeight: number }) => void) | null,
   deps?: unknown[],
 ): void {
   const ctx = useContext(ScrollCtx);
@@ -43,7 +43,7 @@ export function useObserveScrollPosition(
   useEffect(() => {
     if (!ctx || !observer) return;
     const wrapper = (pos: ScrollPosition) =>
-      observerRef.current?.({ scrollTop: pos.scrollTop, scrollHeight: pos.scrollHeight });
+      observerRef.current?.({ scrollTop: pos.scrollTop, scrollHeight: pos.scrollHeight, clientHeight: pos.clientHeight });
     const unsub = ctx.observe(wrapper);
     return unsub;
     // eslint-disable-next-line react-hooks/exhaustive-deps

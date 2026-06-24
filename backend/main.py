@@ -94,13 +94,8 @@ async def _queue_dispatcher() -> None:
 _dispatcher_task: asyncio.Task | None = None
 
 
-async def _message_log_syncer(interval: float = 2.0) -> None:
-    """Background task: sync checkpoint messages to persistent message_log.db.
-
-    Runs every `interval` seconds to capture messages before the checkpoint
-    evicts them. This keeps a full, never-evicted message history available
-    for the frontend.
-    """
+async def _checkpoint_pruner(interval: float = 60.0) -> None:
+    """Background task: prune old checkpoints, keeping at most 25 per thread."""
     while True:
         try:
             for entry in registry.list_agents():
@@ -111,23 +106,13 @@ async def _message_log_syncer(interval: float = 2.0) -> None:
                 try:
                     mounts = {m["name"]: m["path"] for m in info.get("mounts", [])}
                     reader = ArionReader(info["workspace"], agent_id, mounts=mounts)
-                    threads = reader.list_threads("")
-                    for t in threads:
-                        tid = t["thread_id"]
-                        if t.get("has_checkpoint"):
-                            try:
-                                added = reader._sync_to_message_log(tid)
-                                if added:
-                                    logger.debug(
-                                        "message_log synced %d new messages for %s/%s",
-                                        added, agent_id, tid,
-                                    )
-                            except Exception:
-                                logger.debug("message_log sync failed for %s/%s", agent_id, tid, exc_info=True)
+                    results = await asyncio.to_thread(reader.prune_all_threads, keep=250)
+                    if results:
+                        logger.debug("checkpoint prune %s: %s", agent_id, results)
                 except Exception:
-                    logger.debug("message_log agent scan failed for %s", agent_id, exc_info=True)
+                    logger.debug("checkpoint prune failed for %s", agent_id, exc_info=True)
         except Exception:
-            logger.debug("message_log syncer iteration failed", exc_info=True)
+            logger.debug("pruner iteration failed", exc_info=True)
         await asyncio.sleep(interval)
 
 
@@ -139,7 +124,7 @@ async def lifespan(app: FastAPI):
     global _dispatcher_task
     await state_machine.start()
     _dispatcher_task = asyncio.create_task(_queue_dispatcher())
-    _syncer_task = asyncio.create_task(_message_log_syncer())
+    _pruner_task = asyncio.create_task(_checkpoint_pruner())
     logger.info("Backend started on port %d", BACKEND_PORT)
     yield
     if _dispatcher_task:
@@ -148,10 +133,10 @@ async def lifespan(app: FastAPI):
             await _dispatcher_task
         except asyncio.CancelledError:
             pass
-    if _syncer_task:
-        _syncer_task.cancel()
+    if _pruner_task:
+        _pruner_task.cancel()
         try:
-            await _syncer_task
+            await _pruner_task
         except asyncio.CancelledError:
             pass
     await state_machine.stop()
@@ -275,13 +260,18 @@ async def get_agent_state(agent_id: str = Query("default")):
 async def get_messages(
     agent_id: str = Query("default"),
     thread_id: str | None = Query(None),
-    limit: int = Query(500, ge=1, le=500),
-    before_index: int | None = Query(None, ge=0),
+    num_pages: int = Query(3, ge=1, le=20),
+    before_checkpoint_id: str | None = Query(None),
 ):
     tid = thread_id or default_thread_id(agent_id)
     reader = _reader(agent_id)
     pending = _queue(agent_id).list_pending(tid)
-    page = reader.get_messages_page(tid, limit=limit, before_index=before_index)
+    # Run blocking checkpoint ops in thread pool so event loop stays free
+    page = await asyncio.to_thread(
+        reader.get_messages_page, tid,
+        num_pages=num_pages,
+        before_checkpoint_id=before_checkpoint_id,
+    )
     roles = page.pop("_roles", [])
     thread_state = state_machine.get_agent_state(agent_id).get("threads", {}).get(tid, {})
     stream_draft = reader.get_stream_draft(tid) if thread_state.get("active") else None

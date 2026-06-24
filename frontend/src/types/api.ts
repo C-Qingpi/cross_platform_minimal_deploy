@@ -88,6 +88,8 @@ export interface MessagesResponse {
   start_index: number;
   end_index: number;
   has_older: boolean;
+  /** Cursor for loading the next older checkpoint window. */
+  before_checkpoint_id?: string | null;
   thread_state: Record<string, unknown>;
   queue: { id: string; content: string }[];
   stream_draft?: StreamDraft | null;

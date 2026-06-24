@@ -6,7 +6,25 @@ export interface MessagePage {
   total: number;
 }
 
-/** Sync loaded messages with a fresh tail page when user is at the live edge. */
+export const DEFAULT_NUM_PAGES = 3;
+
+/** Merge a fresh tail page into currently-loaded messages.
+ *
+ *  When the user is near the live tail (no older pages loaded), we
+ *  simply replace with the fresh tail. Otherwise we keep the current
+ *  window unchanged — loadOlder will handle extending it.
+ */
+export function mergeTailIntoWindow(
+  loaded: Message[],
+  page: MessagePage,
+): Message[] {
+  // If loaded window is same or longer, keep it (user may have loaded older pages)
+  if (loaded.length >= page.messages.length) {
+    return loaded;
+  }
+  return page.messages;
+}
+
 export function syncLiveTailPage(
   loaded: Message[],
   headIndex: number,

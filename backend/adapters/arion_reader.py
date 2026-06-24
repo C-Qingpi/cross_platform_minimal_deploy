@@ -33,267 +33,7 @@ class ArionReader:
     def checkpoint_path(self) -> Path:
         return self.identity_dir / "checkpoints.sqlite"
 
-    def _message_log_db_path(self) -> Path:
-        return self.identity_dir / "message_log.db"
-
-    def _ensure_message_log_table(self, db: sqlite3.Connection) -> None:
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS messages (
-                thread_id   TEXT NOT NULL,
-                msg_index   INTEGER NOT NULL,
-                msg_key     TEXT NOT NULL,
-                role        TEXT NOT NULL,
-                type        TEXT NOT NULL DEFAULT 'message',
-                content     TEXT NOT NULL,
-                tool_calls  TEXT,
-                name        TEXT,
-                msg_id      TEXT,
-                created_at  TEXT DEFAULT (datetime('now')),
-                UNIQUE(thread_id, msg_key)
-            )
-        """)
-        db.execute("""
-            CREATE INDEX IF NOT EXISTS idx_msg_thread
-            ON messages(thread_id, msg_index)
-        """)
-        db.commit()
-
-    def _sync_to_message_log(self, thread_id: str) -> int:
-        """Sync latest checkpoint messages into the persistent message log.
-
-        Returns the number of new messages added.
-        """
-        msgs = self._latest_checkpoint_messages(thread_id)
-        if not msgs:
-            return 0
-
-        db_path = self._message_log_db_path()
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        db = sqlite3.connect(str(db_path))
-        try:
-            self._ensure_message_log_table(db)
-
-            existing = {
-                row[0]
-                for row in db.execute(
-                    "SELECT msg_key FROM messages WHERE thread_id = ?", (thread_id,)
-                )
-            }
-            max_idx = db.execute(
-                "SELECT COALESCE(MAX(msg_index), -1) FROM messages WHERE thread_id = ?",
-                (thread_id,),
-            ).fetchone()[0]
-
-            new_rows: list[tuple] = []
-            for msg in msgs:
-                key = self._message_key(msg)
-                if key in existing:
-                    continue
-                max_idx += 1
-                existing.add(key)
-                role = msg.get("type", "unknown")
-                content = json.dumps(msg.get("content", ""), ensure_ascii=False)
-                tool_calls = (
-                    json.dumps(msg.get("tool_calls"), ensure_ascii=False)
-                    if msg.get("tool_calls")
-                    else None
-                )
-                new_rows.append((
-                    thread_id, max_idx, key, role,
-                    msg.get("type", "message"),
-                    content, tool_calls,
-                    msg.get("name"), msg.get("id"),
-                ))
-
-            if new_rows:
-                db.executemany(
-                    "INSERT OR IGNORE INTO messages "
-                    "(thread_id, msg_index, msg_key, role, type, content, tool_calls, name, msg_id) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    new_rows,
-                )
-                db.commit()
-            return len(new_rows)
-        finally:
-            db.close()
-
-    def _get_messages_from_log(self, thread_id: str) -> list[dict[str, Any]]:
-        """Return all messages for a thread from the persistent message log."""
-        return self._get_messages_from_log_window(thread_id)
-
-    def _get_messages_from_log_window(
-        self,
-        thread_id: str,
-        limit: int = 0,
-        before_index: int | None = None,
-    ) -> list[dict[str, Any]]:
-        """Return a window of messages from the persistent message log.
-
-        When limit=0 and before_index=None, returns all messages (legacy).
-        Uses SQL LIMIT/OFFSET — never loads the full table into Python
-        when paginated.
-        """
-        db_path = self._message_log_db_path()
-        if not db_path.exists():
-            return []
-        db = sqlite3.connect(str(db_path))
-        try:
-            self._ensure_message_log_table(db)
-            if before_index is not None:
-                if limit:
-                    rows = db.execute(
-                        "SELECT role, type, content, tool_calls, name, msg_id "
-                        "FROM messages WHERE thread_id = ? AND msg_index < ? "
-                        "ORDER BY msg_index DESC LIMIT ?",
-                        (thread_id, before_index, limit),
-                    ).fetchall()
-                    rows.reverse()
-                else:
-                    rows = db.execute(
-                        "SELECT role, type, content, tool_calls, name, msg_id "
-                        "FROM messages WHERE thread_id = ? AND msg_index < ? "
-                        "ORDER BY msg_index",
-                        (thread_id, before_index),
-                    ).fetchall()
-            elif limit:
-                rows = db.execute(
-                    "SELECT role, type, content, tool_calls, name, msg_id "
-                    "FROM messages WHERE thread_id = ? "
-                    "ORDER BY msg_index DESC LIMIT ?",
-                    (thread_id, limit),
-                ).fetchall()
-                rows.reverse()
-            else:
-                rows = db.execute(
-                    "SELECT role, type, content, tool_calls, name, msg_id "
-                    "FROM messages WHERE thread_id = ? ORDER BY msg_index",
-                    (thread_id,),
-                ).fetchall()
-        finally:
-            db.close()
-        return self._rows_to_messages(rows)
-
-    @staticmethod
-    def _rows_to_messages(rows: list[tuple]) -> list[dict[str, Any]]:
-        messages: list[dict[str, Any]] = []
-        for role, mtype, content_str, tool_calls_str, name, msg_id in rows:
-            msg: dict[str, Any] = {
-                "type": role,
-                "content": json.loads(content_str) if content_str[0] in '"[{' else content_str,
-            }
-            if msg_id:
-                msg["id"] = msg_id
-            if name:
-                msg["name"] = name
-            if tool_calls_str:
-                try:
-                    msg["tool_calls"] = json.loads(tool_calls_str)
-                except json.JSONDecodeError:
-                    pass
-            messages.append(msg)
-        return messages
-
-    def _count_messages_in_log(self, thread_id: str) -> int:
-        """Return the total number of messages for a thread."""
-        db_path = self._message_log_db_path()
-        if not db_path.exists():
-            return 0
-        db = sqlite3.connect(str(db_path))
-        try:
-            self._ensure_message_log_table(db)
-            return db.execute(
-                "SELECT COUNT(*) FROM messages WHERE thread_id = ?",
-                (thread_id,),
-            ).fetchone()[0]
-        finally:
-            db.close()
-
-    def _get_message_roles(
-        self, thread_id: str, before_index: int | None = None,
-    ) -> list[tuple[str, int]]:
-        """Return lightweight (role, msg_index) pairs for turn counting.
-
-        Reads only two columns — even for 30K messages this is ~300KB,
-        vs multi-MB for full message content.
-        """
-        db_path = self._message_log_db_path()
-        if not db_path.exists():
-            return []
-        db = sqlite3.connect(str(db_path))
-        try:
-            self._ensure_message_log_table(db)
-            if before_index is not None:
-                rows = db.execute(
-                    "SELECT role, msg_index FROM messages "
-                    "WHERE thread_id = ? AND msg_index < ? ORDER BY msg_index",
-                    (thread_id, before_index),
-                ).fetchall()
-            else:
-                rows = db.execute(
-                    "SELECT role, msg_index FROM messages "
-                    "WHERE thread_id = ? ORDER BY msg_index",
-                    (thread_id,),
-                ).fetchall()
-            return [(r, i) for r, i in rows]
-        finally:
-            db.close()
-
-    def _bootstrap_message_log(self, thread_id: str) -> int:
-        """Bootstrap: reconstruct full history from all checkpoints.
-
-        Reads every checkpoint snapshot for the thread, deduplicates across
-        them, and writes the union into message_log.db.
-
-        Runs on every request but skips quickly once message_log.db has
-        caught up with the checkpoint union.
-        """
-        from_checkpoints = self._reconstruct_from_checkpoints(thread_id)
-        if not from_checkpoints:
-            return 0
-
-        db_path = self._message_log_db_path()
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        db = sqlite3.connect(str(db_path))
-        try:
-            self._ensure_message_log_table(db)
-
-            existing_count = db.execute(
-                "SELECT COUNT(*) FROM messages WHERE thread_id = ?", (thread_id,)
-            ).fetchone()[0]
-            if existing_count >= len(from_checkpoints):
-                return 0  # already complete
-
-            # Re-bootstrap: clear stale partial entries, rebuild from checkpoints.
-            db.execute("DELETE FROM messages WHERE thread_id = ?", (thread_id,))
-
-            rows: list[tuple] = []
-            for idx, msg in enumerate(from_checkpoints):
-                key = self._message_key(msg)
-                role = msg.get("type", "unknown")
-                content = json.dumps(msg.get("content", ""), ensure_ascii=False)
-                tool_calls = (
-                    json.dumps(msg.get("tool_calls"), ensure_ascii=False)
-                    if msg.get("tool_calls")
-                    else None
-                )
-                rows.append((
-                    thread_id, idx, key, role,
-                    msg.get("type", "message"),
-                    content, tool_calls,
-                    msg.get("name"), msg.get("id"),
-                ))
-
-            if rows:
-                db.executemany(
-                    "INSERT INTO messages "
-                    "(thread_id, msg_index, msg_key, role, type, content, tool_calls, name, msg_id) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    rows,
-                )
-                db.commit()
-            return len(rows)
-        finally:
-            db.close()
+    # ── Stream draft (kept from legacy) ─────────────────────────
 
     def _stream_draft_path(self, thread_id: str) -> Path:
         return self.identity_dir / "stream_draft" / f"{thread_id}.json"
@@ -306,6 +46,8 @@ class ArionReader:
         if not text:
             return None
         return json.loads(text)
+
+    # ── Checkpoint helpers ──────────────────────────────────────
 
     def _message_key(self, msg: dict[str, Any]) -> str:
         mid = msg.get("id")
@@ -329,88 +71,240 @@ class ArionReader:
         raw_messages = cp_tuple.checkpoint.get("channel_values", {}).get("messages", [])
         return [_serialize_message(m) for m in raw_messages]
 
-    def _reconstruct_from_checkpoints(self, thread_id: str) -> list[dict[str, Any]]:
-        """Read all checkpoint snapshots and union their messages into full history.
+    # ── Checkpoint-based pagination ─────────────────────────────
+    #
+    # Each checkpoint is a full-state snapshot.  Compression boundaries
+    # (where message count jumps +30%) are natural pagination anchors.
+    # Default: return messages from 3 compression windows.
 
-        Each checkpoint is a sliding window.  By iterating every snapshot
-        in reverse time order (newest first) and deduplicating, we
-        reconstruct the complete message history for a thread.
+    def _get_checkpoint_pages(
+        self, thread_id: str, *, num_pages: int = 3,
+        before_checkpoint_id: str | None = None,
+    ) -> tuple[list[dict[str, Any]], bool, str | None]:
+        """Return compression-window pages from checkpoint history.
+
+        Each page = the full message set at a compression boundary.
+        Consecutive checkpoints within a window differ by ~1 message,
+        so we detect boundaries where message count drops >30%
+        (moving from post-compression to pre-compression window).
+
+        Default: last 3 compression windows.
         """
+        if not self.checkpoint_path.exists():
+            return [], False, None
         from langgraph.checkpoint.sqlite import SqliteSaver
 
         conn = sqlite3.connect(str(self.checkpoint_path))
-        saver = SqliteSaver(conn)
-        checkpoints = list(saver.list({"configurable": {"thread_id": thread_id}}))
-        conn.close()
+        try:
+            saver = SqliteSaver(conn)
+            config = {"configurable": {"thread_id": thread_id}}
+            checkpoints = list(saver.list(config))
+        finally:
+            conn.close()
+
         if not checkpoints:
-            return []
+            return [], False, None
 
-        seen: set[str] = set()
-        merged: list[dict[str, Any]] = []
-        for cp_tuple in reversed(checkpoints):
-            raw_messages = cp_tuple.checkpoint.get("channel_values", {}).get("messages", [])
-            for msg in raw_messages:
-                serialized = _serialize_message(msg)
-                key = self._message_key(serialized)
-                if key in seen:
-                    continue
-                seen.add(key)
-                merged.append(serialized)
-        return merged
+        # Walk newest→oldest, collecting boundary checkpoints.
+        # A boundary is where message_count drops significantly
+        # (pre-compression window has summary + fewer messages).
+        boundaries: list[tuple[int, Any, str, int, bool]] = []
+        prev_count = -1
 
-    def get_all_messages(self, thread_id: str) -> list[dict[str, Any]]:
-        # Bootstrap from checkpoint snapshots if needed,
-        # sync latest checkpoint messages, then read from message_log.db.
-        self._bootstrap_message_log(thread_id)
-        self._sync_to_message_log(thread_id)
-        from_log = self._get_messages_from_log(thread_id)
-        if from_log:
-            return from_log
-        return self._latest_checkpoint_messages(thread_id)
+        for i, cp_tuple in enumerate(checkpoints):
+            cid = cp_tuple.config.get("configurable", {}).get("checkpoint_id", "")
+            channel_values = cp_tuple.checkpoint.get("channel_values", {})
+            msgs = list(channel_values.get("messages", []))
+            summary = channel_values.get("summary", "")
+            count = len(msgs)
+
+            # Boundary detection: first checkpoint always starts a page.
+            # Subsequent boundaries: message count drops significantly
+            # (moving from post-compression to pre-compression window).
+            is_boundary = prev_count == -1
+            if not is_boundary and prev_count > 0:
+                # Compression shrinks messages (summary replaces most).
+                # Pre-compression checkpoint has <70% of post-compression count.
+                if count < prev_count * 0.7 and prev_count > 30:
+                    is_boundary = True
+
+            if is_boundary:
+                boundaries.append((i, cp_tuple, cid, count, bool(summary)))
+
+            prev_count = count
+
+        if not boundaries:
+            # Fallback: no compression boundaries — return the latest
+            # checkpoint as a single page with all its messages.
+            if not before_checkpoint_id and checkpoints:
+                cp_tuple = checkpoints[0]
+                cid = cp_tuple.config.get("configurable", {}).get("checkpoint_id", "")
+                channel_values = cp_tuple.checkpoint.get("channel_values", {})
+                msgs = list(channel_values.get("messages", []))
+                summary = channel_values.get("summary", "")
+                serialized = [_serialize_message(m) for m in msgs]
+                pages = [{
+                    "checkpoint_id": cid,
+                    "message_count": len(msgs),
+                    "messages": serialized,
+                    "has_summary": bool(summary),
+                }]
+                return pages, False, None
+            return [], False, None
+
+        # Apply cursor: skip boundaries before the given checkpoint_id
+        if before_checkpoint_id:
+            for j, (_, _, cid, _, _) in enumerate(boundaries):
+                if cid == before_checkpoint_id:
+                    boundaries = boundaries[j + 1:]
+                    break
+
+        if not boundaries:
+            return [], False, None
+
+        # Take num_pages boundaries
+        selected = boundaries[:num_pages]
+        has_older = len(boundaries) > num_pages
+        next_cursor = selected[-1][2] if has_older else None
+
+        pages: list[dict[str, Any]] = []
+        for _, cp_tuple, cid, count, has_summary in selected:
+            channel_values = cp_tuple.checkpoint.get("channel_values", {})
+            msgs = list(channel_values.get("messages", []))
+            serialized = [_serialize_message(m) for m in msgs]
+            pages.append({
+                "checkpoint_id": cid,
+                "message_count": count,
+                "messages": serialized,
+                "has_summary": has_summary,
+            })
+
+        return pages, has_older, next_cursor
 
     def get_messages_page(
         self,
         thread_id: str,
         *,
-        limit: int = 500,
-        before_index: int | None = None,
+        num_pages: int = 3,
+        before_checkpoint_id: str | None = None,
     ) -> dict[str, Any]:
-        # 1. Bootstrap / sync (idempotent)
-        self._bootstrap_message_log(thread_id)
-        self._sync_to_message_log(thread_id)
+        """Return checkpoint-based paginated message history.
 
-        # 2. Count total from SQL (O(1), not O(n))
-        total = self._count_messages_in_log(thread_id)
+        Default: messages from 3 most recent compression windows.
+        When before_checkpoint_id is set, loads from the checkpoint
+        just before that one, working backward.
+        """
+        pages, has_older, next_cursor = self._get_checkpoint_pages(
+            thread_id, num_pages=num_pages,
+            before_checkpoint_id=before_checkpoint_id,
+        )
 
-        # 3. Compute window
-        if before_index is None:
-            start = max(0, total - limit)
-            end = total
-        else:
-            end = max(0, min(before_index, total))
-            start = max(0, end - limit)
+        if not pages:
+            return {
+                "messages": [],
+                "total": 0,
+                "start_index": 0,
+                "end_index": 0,
+                "has_older": False,
+                "before_checkpoint_id": None,
+                "_roles": [],
+            }
 
-        # 4. Load only the window from SQL (never the full list)
-        window_limit = end - start
-        window_messages = self._get_messages_from_log_window(
-            thread_id, limit=window_limit, before_index=end,
-        ) if window_limit > 0 else []
+        # Concatenate messages from all pages (oldest first = most-recent first reversed)
+        all_msgs: list[dict[str, Any]] = []
+        for page in reversed(pages):
+            all_msgs.extend(page["messages"])
 
-        # 5. Lightweight role list for turn_models slicing (two columns only)
-        roles = self._get_message_roles(thread_id)
+        # Total unique messages across all loaded pages
+        total = len(all_msgs)
+
+        # Build role list from concatenated messages
+        roles = [(m.get("type", "unknown"), i) for i, m in enumerate(all_msgs)]
 
         return {
-            "messages": window_messages,
+            "messages": all_msgs,
             "total": total,
-            "start_index": start,
-            "end_index": end,
-            "has_older": start > 0,
-            "_roles": roles,  # internal — pop before sending to client
+            "start_index": 0,
+            "end_index": len(all_msgs),
+            "has_older": has_older,
+            "before_checkpoint_id": next_cursor,
+            "_roles": roles,
         }
 
-    def get_messages(self, thread_id: str, limit: int = 200) -> list[dict[str, Any]]:
-        page = self.get_messages_page(thread_id, limit=limit)
+    def get_messages(self, thread_id: str, num_pages: int = 3) -> list[dict[str, Any]]:
+        page = self.get_messages_page(thread_id, num_pages=num_pages)
         return page["messages"]
+
+    # ── Checkpoint pruning ──────────────────────────────────────
+
+    def prune_checkpoints(self, thread_id: str, *, keep: int = 250) -> int:
+        """Remove old checkpoints for a thread, keeping the most recent `keep`.
+
+        Uses raw SQL for speed (no langgraph deserialization needed).
+        Returns number of checkpoints removed.
+        """
+        if not self.checkpoint_path.exists():
+            return 0
+        conn = sqlite3.connect(str(self.checkpoint_path))
+        try:
+            total = conn.execute(
+                "SELECT COUNT(*) FROM checkpoints WHERE thread_id = ?",
+                (thread_id,),
+            ).fetchone()[0]
+
+            if total <= keep:
+                return 0
+
+            # Find the checkpoint_id of the (total - keep)-th oldest checkpoint
+            # by ordering ascending and skipping
+            cutoff = conn.execute(
+                "SELECT checkpoint_id FROM checkpoints WHERE thread_id = ? "
+                "ORDER BY checkpoint_id ASC LIMIT 1 OFFSET ?",
+                (thread_id, total - keep),
+            ).fetchone()
+
+            if cutoff is None:
+                return 0
+
+            cutoff_id = cutoff[0]
+            removed = conn.execute(
+                "SELECT COUNT(*) FROM checkpoints WHERE thread_id = ? AND checkpoint_id < ?",
+                (thread_id, cutoff_id),
+            ).fetchone()[0]
+
+            conn.execute(
+                "DELETE FROM checkpoints WHERE thread_id = ? AND checkpoint_id < ?",
+                (thread_id, cutoff_id),
+            )
+            conn.execute(
+                "DELETE FROM writes WHERE thread_id = ? AND checkpoint_id < ?",
+                (thread_id, cutoff_id),
+            )
+            conn.commit()
+
+            if removed > 0:
+                logger.info(
+                    "Pruned %d checkpoints for %s/%s (kept %d)",
+                    removed, self.agent_id, thread_id, keep,
+                )
+            return removed
+        finally:
+            conn.close()
+
+    def prune_all_threads(self, *, keep: int = 250) -> dict[str, int]:
+        """Prune all threads in this agent's checkpoint DB.
+
+        Returns {thread_id: removed_count}.
+        """
+        results: dict[str, int] = {}
+        for t in self.list_threads(""):
+            tid = t["thread_id"]
+            if t.get("has_checkpoint"):
+                try:
+                    results[tid] = self.prune_checkpoints(tid, keep=keep)
+                except Exception:
+                    logger.debug("prune failed for %s/%s", self.agent_id, tid, exc_info=True)
+        return results
 
     def get_summary(self, thread_id: str) -> str:
         if not self.checkpoint_path.exists():
@@ -527,13 +421,6 @@ class ArionReader:
             conn.execute("DELETE FROM writes WHERE thread_id = ?", (thread_id,))
             conn.commit()
             conn.close()
-        # Delete message-log entries so old messages don't reappear.
-        msg_log = self._message_log_db_path()
-        if msg_log.exists():
-            db = sqlite3.connect(str(msg_log))
-            db.execute("DELETE FROM messages WHERE thread_id = ?", (thread_id,))
-            db.commit()
-            db.close()
         # Delete stream-draft so stale drafts don't show for a recreated thread.
         stream_draft = self._stream_draft_path(thread_id)
         if stream_draft.exists():

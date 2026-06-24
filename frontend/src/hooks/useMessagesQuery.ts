@@ -2,20 +2,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AgentState, Message, MessagesResponse, StreamDraft } from "../types/api";
 import * as api from "../lib/api";
-import { syncLiveTailPage, wasAtLiveTail } from "../lib/mergeMessages";
+import { mergeTailIntoWindow, DEFAULT_NUM_PAGES } from "../lib/mergeMessages";
 
 const POLL_MS_IDLE = 1000;
 const POLL_MS_ACTIVE = 200;
-const TAIL_LIMIT = 20;
 
 /**
- * React Query-powered hook — sliding window over message history.
+ * React Query-powered hook — checkpoint-based pagination.
  *
- * - React Query caches each fetched page by key (agent, thread, offset).
- * - A single `messages` state holds the visible window.
- * - Polls merge into the tail; `loadOlder` prepends older pages.
- * - `discardOlder` (called when user scrolls to bottom) trims back
- *   to TAIL_LIMIT to keep the virtual list small.
+ * - Default view: messages from 3 compression windows.
+ * - Polls merge new messages into the current window.
+ * - loadOlder loads the next older checkpoint window via before_checkpoint_id.
+ * - discardOlder trims back to the latest 3 pages.
  */
 export function useMessagesQuery(agentId: string, threadId: string) {
   const queryClient = useQueryClient();
@@ -35,7 +33,7 @@ export function useMessagesQuery(agentId: string, threadId: string) {
 
   const pageQuery = useQuery({
     queryKey,
-    queryFn: () => api.fetchMessages(agentId, threadId, { limit: TAIL_LIMIT }),
+    queryFn: () => api.fetchMessages(agentId, threadId, { numPages: DEFAULT_NUM_PAGES }),
     refetchInterval: () => {
       const state = queryClient.getQueryData<AgentState>(["agentState", agentId]);
       const active =
@@ -54,13 +52,13 @@ export function useMessagesQuery(agentId: string, threadId: string) {
   const [turnModels, setTurnModels] = useState<string[]>([]);
   const [activeTurnModel, setActiveTurnModel] = useState<string | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const [hasOlder, setHasOlder] = useState(false);
 
-  const displayFromRef = useRef(0); // first index visible in `messages`
+  const beforeCheckpointRef = useRef<string | null>(null);
   const totalRef = useRef(0);
   const prevQueryRef = useRef<string>("");
   const messagesRef = useRef<Message[]>([]);
 
-  // Keep ref in sync — used inside effect to avoid stale closures
   messagesRef.current = messages;
 
   // ── Merge poll page into display ──────────────────────────────
@@ -77,75 +75,70 @@ export function useMessagesQuery(agentId: string, threadId: string) {
     const currentKey = `${agentId}:${threadId}`;
     if (prevQueryRef.current !== currentKey) {
       prevQueryRef.current = currentKey;
-      displayFromRef.current = page.start_index;
+      beforeCheckpointRef.current = page.before_checkpoint_id ?? null;
       totalRef.current = page.total;
       setMessages(page.messages);
+      setHasOlder(page.has_older);
       return;
     }
 
-    // Has displayFrom moved past the page? This can happen for two reasons:
-    // 1. User loaded older pages (protect from poll collapse)
-    // 2. Tail window shifted forward because new messages arrived
-    // Case 1: just update metadata.  Case 2: user was near the tail —
-    // slide displayFrom forward so the window doesn't freeze.
-    if (displayFromRef.current < page.start_index) {
+    // User loaded older pages (messages > fresh tail)? Keep their view.
+    // Otherwise (at tail), always merge fresh data — even when
+    // before_checkpoint_id changes (new checkpoint after send).
+    const loadedCount = messagesRef.current.length;
+    if (loadedCount > page.messages.length) {
       totalRef.current = page.total;
-      const tailStart = Math.max(0, page.total - TAIL_LIMIT);
-      // Only slide if displayFrom is still near the tail (within TAIL_LIMIT).
-      // If user loaded older pages, displayFrom will be much lower.
-      if (displayFromRef.current >= tailStart) {
-        displayFromRef.current = page.start_index;
-        setMessages(page.messages);
-      }
+      setHasOlder(page.has_older);
       return;
     }
 
     totalRef.current = page.total;
+    setHasOlder(page.has_older);
+    beforeCheckpointRef.current = page.before_checkpoint_id ?? null;
 
-    // Use ref to read latest messages (avoids stale closure from effect deps)
-    const currentMessages = messagesRef.current;
-    const head = Math.max(displayFromRef.current, page.start_index);
-
-    if (wasAtLiveTail(head, currentMessages.length, page.total)) {
-      setMessages((prev) =>
-        syncLiveTailPage(prev, head, {
-          messages: page.messages,
-          start_index: page.start_index,
-          total: page.total,
-        }),
-      );
-    }
+    setMessages((prev) =>
+      mergeTailIntoWindow(prev, {
+        messages: page.messages,
+        start_index: page.start_index,
+        total: page.total,
+      }),
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageQuery.data, pageQuery.dataUpdatedAt]);
 
   // ── loadOlder — auto-triggered by scroll proximity ────────────
   const loadOlder = useCallback(async () => {
     if (!agentId || !threadId || loadingOlder) return;
-    if (displayFromRef.current === 0) return; // nothing older
+    if (!hasOlder) return;
     setLoadingOlder(true);
     try {
+      const cursor = beforeCheckpointRef.current;
+      if (!cursor) return;
       const page = await api.fetchMessages(agentId, threadId, {
-        beforeIndex: displayFromRef.current,
+        beforeCheckpointId: cursor,
       });
       setMessages((prev) => [...page.messages, ...prev]);
       setTurnModels((prev) => [...(page.turn_models ?? []), ...prev]);
-      displayFromRef.current = page.start_index;
-      totalRef.current = page.total;
+      setHasOlder(page.has_older);
+      beforeCheckpointRef.current = page.before_checkpoint_id ?? null;
+      totalRef.current = Math.max(totalRef.current, page.total);
     } finally {
       setLoadingOlder(false);
     }
-  }, [agentId, threadId, loadingOlder]);
+  }, [agentId, threadId, loadingOlder, hasOlder]);
 
-  // ── discardOlder — trim to tail when at bottom ────────────────
-  const discardOlder = useCallback(() => {
-    if (!totalRef.current) return;
-    const tailStart = Math.max(0, totalRef.current - TAIL_LIMIT);
-    if (displayFromRef.current >= tailStart) return; // already at tail
-
-    // Discard: keep only the latest TAIL_LIMIT messages
-    setMessages((prev) => prev.slice(-TAIL_LIMIT));
-    displayFromRef.current = tailStart;
-  }, []);
+  // ── discardOlder — trim to default pages when at bottom ───────
+  const discardOlder = useCallback(async () => {
+    if (!hasOlder) return; // already at latest pages
+    // Refetch fresh tail (3 pages) and replace
+    const page = await api.fetchMessages(agentId, threadId, { numPages: DEFAULT_NUM_PAGES });
+    setMessages(page.messages);
+    setHasOlder(page.has_older);
+    beforeCheckpointRef.current = page.before_checkpoint_id ?? null;
+    totalRef.current = page.total;
+    setTurnModels(page.turn_models ?? []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentId, threadId, hasOlder]);
 
   // ── Manual refetch (after user sends a message) ───────────────
   const refreshTail = useCallback(async () => {
@@ -153,15 +146,13 @@ export function useMessagesQuery(agentId: string, threadId: string) {
     return result.data;
   }, [pageQuery.refetch]);
 
-  const hasOlder = displayFromRef.current > 0;
-
   return {
     messages,
     summary,
     agentState,
     connected: pageQuery.isSuccess && agentQuery.isSuccess,
     total: totalRef.current || pageQuery.data?.total || 0,
-    startIndex: displayFromRef.current,
+    startIndex: 0,
     hasOlder,
     loadingOlder,
     loadOlder,
