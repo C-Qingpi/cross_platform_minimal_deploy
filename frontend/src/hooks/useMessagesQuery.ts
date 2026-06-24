@@ -83,11 +83,20 @@ export function useMessagesQuery(agentId: string, threadId: string) {
       return;
     }
 
-    // Has displayFrom moved past the page? (user loaded older pages)
-    // In that case, the poll page doesn't contain our display window start.
-    // Don't merge — let the poll update metadata only.
+    // Has displayFrom moved past the page? This can happen for two reasons:
+    // 1. User loaded older pages (protect from poll collapse)
+    // 2. Tail window shifted forward because new messages arrived
+    // Case 1: just update metadata.  Case 2: user was near the tail —
+    // slide displayFrom forward so the window doesn't freeze.
     if (displayFromRef.current < page.start_index) {
       totalRef.current = page.total;
+      const tailStart = Math.max(0, page.total - TAIL_LIMIT);
+      // Only slide if displayFrom is still near the tail (within TAIL_LIMIT).
+      // If user loaded older pages, displayFrom will be much lower.
+      if (displayFromRef.current >= tailStart) {
+        displayFromRef.current = page.start_index;
+        setMessages(page.messages);
+      }
       return;
     }
 

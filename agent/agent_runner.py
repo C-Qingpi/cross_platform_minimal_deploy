@@ -126,6 +126,13 @@ def _clear_stream_draft(workspace: Path, agent_id: str, thread_id: str) -> None:
     _stream_draft_path(workspace, agent_id, thread_id).unlink(missing_ok=True)
 
 
+def _clear_thread_stream_draft(agent_id: str, thread_id: str) -> None:
+    """Convenience wrapper that resolves workspace from registry."""
+    info = registry.get_agent(agent_id)
+    if info:
+        _clear_stream_draft(Path(info["workspace"]), agent_id, thread_id)
+
+
 def _write_stream_draft(path: Path, payload: dict[str, str]) -> None:
     text = json.dumps(payload, ensure_ascii=False)
     tmp = path.with_suffix(path.suffix + ".tmp")
@@ -139,9 +146,7 @@ def _make_llm_stream_handler(agent_id: str, workspace: Path):
     def handler(ev: LlmStreamUpdate) -> None:
         path = draft_dir / f"{ev.thread_id}.json"
         if ev.phase == "end":
-            path.unlink(missing_ok=True)
-            path.with_suffix(path.suffix + ".tmp").unlink(missing_ok=True)
-            return
+            return  # keep last content visible until turn completes
         if ev.phase == "start":
             draft_dir.mkdir(parents=True, exist_ok=True)
             return
@@ -403,9 +408,11 @@ async def _run_turn(
             except GraphRecursionError:
                 logger.error("Turn recursion limit agent=%s thread=%s", agent_id, thread_id)
                 events.task_recursion_limit(agent_id, thread_id, model, msg_id)
+                _clear_thread_stream_draft(agent_id, thread_id)
                 return
             logger.info("Turn completed agent=%s thread=%s", agent_id, thread_id)
             events.task_completed(agent_id, thread_id, model, msg_id)
+            _clear_thread_stream_draft(agent_id, thread_id)
         else:
             invoke_task.cancel()
             runtime.zombie_task = invoke_task
@@ -419,6 +426,7 @@ async def _run_turn(
         logger.exception("Turn failed agent=%s thread=%s", agent_id, thread_id)
         error_line = str(exc).strip().split("\n")[-1][:300]
         events.task_error(agent_id, thread_id, model, error_line, msg_id)
+        _clear_thread_stream_draft(agent_id, thread_id)
         raise
     finally:
         heartbeat_stop.set()

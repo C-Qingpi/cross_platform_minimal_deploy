@@ -179,7 +179,7 @@ class ArionReader:
         for role, mtype, content_str, tool_calls_str, name, msg_id in rows:
             msg: dict[str, Any] = {
                 "type": role,
-                "content": json.loads(content_str) if content_str.startswith(("[", "{")) else content_str,
+                "content": json.loads(content_str) if content_str[0] in '"[{' else content_str,
             }
             if msg_id:
                 msg["id"] = msg_id
@@ -239,14 +239,16 @@ class ArionReader:
             db.close()
 
     def _bootstrap_message_log(self, thread_id: str) -> int:
-        """Bootstrap: copy display_log (full history) into message_log.db.
+        """Bootstrap: reconstruct full history from all checkpoints.
 
-        Runs on every request but skips if message_log.db already has all
-        of display_log.  Re-bootstraps when display_log has more messages
-        (e.g. checkpoint sync wrote partial data before bootstrap existed).
+        Reads every checkpoint snapshot for the thread, deduplicates across
+        them, and writes the union into message_log.db.
+
+        Runs on every request but skips quickly once message_log.db has
+        caught up with the checkpoint union.
         """
-        display = self._load_display_log(thread_id)
-        if not display:
+        from_checkpoints = self._reconstruct_from_checkpoints(thread_id)
+        if not from_checkpoints:
             return 0
 
         db_path = self._message_log_db_path()
@@ -255,21 +257,17 @@ class ArionReader:
         try:
             self._ensure_message_log_table(db)
 
-            # Compare display_log count (ground truth for ancient history)
-            # with message_log.db count.  If the log DB has fewer messages
-            # it means we only have partial data from checkpoint sync runs
-            # that happened before bootstrap was added.
             existing_count = db.execute(
                 "SELECT COUNT(*) FROM messages WHERE thread_id = ?", (thread_id,)
             ).fetchone()[0]
-            if existing_count >= len(display):
-                return 0  # already complete — nothing to do
+            if existing_count >= len(from_checkpoints):
+                return 0  # already complete
 
-            # Re-bootstrap: clear stale partial entries, rebuild from display_log.
+            # Re-bootstrap: clear stale partial entries, rebuild from checkpoints.
             db.execute("DELETE FROM messages WHERE thread_id = ?", (thread_id,))
 
             rows: list[tuple] = []
-            for idx, msg in enumerate(display):
+            for idx, msg in enumerate(from_checkpoints):
                 key = self._message_key(msg)
                 role = msg.get("type", "unknown")
                 content = json.dumps(msg.get("content", ""), ensure_ascii=False)
@@ -297,9 +295,6 @@ class ArionReader:
         finally:
             db.close()
 
-    def _display_log_path(self, thread_id: str) -> Path:
-        return self.identity_dir / "display_log" / f"{thread_id}.jsonl"
-
     def _stream_draft_path(self, thread_id: str) -> Path:
         return self.identity_dir / "stream_draft" / f"{thread_id}.json"
 
@@ -320,40 +315,6 @@ class ArionReader:
         body = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False, sort_keys=True)
         return f"{msg.get('type')}:{len(body)}:{body[:200]}"
 
-    def _load_display_log(self, thread_id: str) -> list[dict[str, Any]]:
-        path = self._display_log_path(thread_id)
-        if not path.exists():
-            return []
-        messages: list[dict[str, Any]] = []
-        for line in path.read_text(encoding="utf-8-sig").splitlines():
-            line = line.strip()
-            if line:
-                try:
-                    messages.append(json.loads(line))
-                except json.JSONDecodeError:
-                    logger.warning(
-                        "Skipping malformed display log line in %s/%s: %s",
-                        thread_id, path.name, line[:80],
-                    )
-        return messages
-
-    def _write_display_log(self, thread_id: str, messages: list[dict[str, Any]]) -> None:
-        path = self._display_log_path(thread_id)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            for msg in messages:
-                f.write(json.dumps(msg, ensure_ascii=False) + "\n")
-
-    def _merge_messages(self, existing: list[dict[str, Any]], incoming: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        seen = {self._message_key(m) for m in existing}
-        merged = list(existing)
-        for msg in incoming:
-            key = self._message_key(msg)
-            if key not in seen:
-                merged.append(msg)
-                seen.add(key)
-        return merged
-
     def _latest_checkpoint_messages(self, thread_id: str) -> list[dict[str, Any]]:
         if not self.checkpoint_path.exists():
             return []
@@ -368,7 +329,13 @@ class ArionReader:
         raw_messages = cp_tuple.checkpoint.get("channel_values", {}).get("messages", [])
         return [_serialize_message(m) for m in raw_messages]
 
-    def _bootstrap_display_log_from_checkpoints(self, thread_id: str) -> list[dict[str, Any]]:
+    def _reconstruct_from_checkpoints(self, thread_id: str) -> list[dict[str, Any]]:
+        """Read all checkpoint snapshots and union their messages into full history.
+
+        Each checkpoint is a sliding window.  By iterating every snapshot
+        in reverse time order (newest first) and deduplicating, we
+        reconstruct the complete message history for a thread.
+        """
         from langgraph.checkpoint.sqlite import SqliteSaver
 
         conn = sqlite3.connect(str(self.checkpoint_path))
@@ -391,38 +358,15 @@ class ArionReader:
                 merged.append(serialized)
         return merged
 
-    def _sync_display_log(self, thread_id: str, current: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        path = self._display_log_path(thread_id)
-        if not path.exists():
-            bootstrapped = self._bootstrap_display_log_from_checkpoints(thread_id)
-            self._write_display_log(thread_id, bootstrapped or list(current))
-
-        display = self._load_display_log(thread_id)
-        updated = self._merge_messages(display, current)
-        if len(updated) != len(display):
-            self._write_display_log(thread_id, updated)
-        return updated
-
     def get_all_messages(self, thread_id: str) -> list[dict[str, Any]]:
-        # 1. Bootstrap: if message_log.db is empty for this thread,
-        #    seed it from the display_log (full history).
+        # Bootstrap from checkpoint snapshots if needed,
+        # sync latest checkpoint messages, then read from message_log.db.
         self._bootstrap_message_log(thread_id)
-
-        # 2. Sync latest checkpoint messages (catches any new messages
-        #    written since last sync).
         self._sync_to_message_log(thread_id)
-
-        # 3. Read from persistent message_log.db (full history, never evicted)
         from_log = self._get_messages_from_log(thread_id)
         if from_log:
             return from_log
-
-        # 4. Ultimate fallback: nothing in log, nothing in display_log —
-        #    try checkpoint directly.
-        current = self._latest_checkpoint_messages(thread_id)
-        if self.checkpoint_path.exists():
-            return self._sync_display_log(thread_id, current)
-        return self._load_display_log(thread_id)
+        return self._latest_checkpoint_messages(thread_id)
 
     def get_messages_page(
         self,
@@ -583,10 +527,13 @@ class ArionReader:
             conn.execute("DELETE FROM writes WHERE thread_id = ?", (thread_id,))
             conn.commit()
             conn.close()
-        # Delete display-log so old messages don't reappear when a new thread reuses the name.
-        display_log = self._display_log_path(thread_id)
-        if display_log.exists():
-            display_log.unlink()
+        # Delete message-log entries so old messages don't reappear.
+        msg_log = self._message_log_db_path()
+        if msg_log.exists():
+            db = sqlite3.connect(str(msg_log))
+            db.execute("DELETE FROM messages WHERE thread_id = ?", (thread_id,))
+            db.commit()
+            db.close()
         # Delete stream-draft so stale drafts don't show for a recreated thread.
         stream_draft = self._stream_draft_path(thread_id)
         if stream_draft.exists():
