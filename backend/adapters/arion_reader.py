@@ -239,7 +239,12 @@ class ArionReader:
             db.close()
 
     def _bootstrap_message_log(self, thread_id: str) -> int:
-        """One-time bootstrap: copy display_log (full history) into message_log.db."""
+        """Bootstrap: copy display_log (full history) into message_log.db.
+
+        Runs on every request but skips if message_log.db already has all
+        of display_log.  Re-bootstraps when display_log has more messages
+        (e.g. checkpoint sync wrote partial data before bootstrap existed).
+        """
         display = self._load_display_log(thread_id)
         if not display:
             return 0
@@ -250,12 +255,18 @@ class ArionReader:
         try:
             self._ensure_message_log_table(db)
 
-            # Check if already bootstrapped for this thread
+            # Compare display_log count (ground truth for ancient history)
+            # with message_log.db count.  If the log DB has fewer messages
+            # it means we only have partial data from checkpoint sync runs
+            # that happened before bootstrap was added.
             existing_count = db.execute(
                 "SELECT COUNT(*) FROM messages WHERE thread_id = ?", (thread_id,)
             ).fetchone()[0]
-            if existing_count > 0:
-                return 0
+            if existing_count >= len(display):
+                return 0  # already complete — nothing to do
+
+            # Re-bootstrap: clear stale partial entries, rebuild from display_log.
+            db.execute("DELETE FROM messages WHERE thread_id = ?", (thread_id,))
 
             rows: list[tuple] = []
             for idx, msg in enumerate(display):
@@ -276,7 +287,7 @@ class ArionReader:
 
             if rows:
                 db.executemany(
-                    "INSERT OR IGNORE INTO messages "
+                    "INSERT INTO messages "
                     "(thread_id, msg_index, msg_key, role, type, content, tool_calls, name, msg_id) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     rows,

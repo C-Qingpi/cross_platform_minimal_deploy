@@ -32,21 +32,10 @@ export function useMessagesQuery(agentId: string, threadId: string) {
 
   // ── Messages page (React Query lifecycle) ─────────────────────
   const queryKey = ["messages", agentId, threadId];
-  const firstFetchRef = useRef(true);
-  const lastFetchedKeyRef = useRef("");
 
   const pageQuery = useQuery({
     queryKey,
-    queryFn: () => {
-      const key = `${agentId}:${threadId}`;
-      if (lastFetchedKeyRef.current !== key) {
-        lastFetchedKeyRef.current = key;
-        firstFetchRef.current = true;
-      }
-      const limit = firstFetchRef.current ? TAIL_LIMIT : undefined;
-      firstFetchRef.current = false;
-      return api.fetchMessages(agentId, threadId, limit ? { limit } : undefined);
-    },
+    queryFn: () => api.fetchMessages(agentId, threadId, { limit: TAIL_LIMIT }),
     refetchInterval: () => {
       const state = queryClient.getQueryData<AgentState>(["agentState", agentId]);
       const active =
@@ -55,8 +44,6 @@ export function useMessagesQuery(agentId: string, threadId: string) {
       return active ? POLL_MS_ACTIVE : POLL_MS_IDLE;
     },
     staleTime: 0,
-    gcTime: Infinity,  // never garbage-collect — return to thread shows cached data instantly
-    placeholderData: (prev) => prev,  // keep previous thread's data while new one loads
     enabled: Boolean(agentId) && Boolean(threadId),
   });
 
