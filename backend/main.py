@@ -94,6 +94,43 @@ async def _queue_dispatcher() -> None:
 _dispatcher_task: asyncio.Task | None = None
 
 
+async def _message_log_syncer(interval: float = 2.0) -> None:
+    """Background task: sync checkpoint messages to persistent message_log.db.
+
+    Runs every `interval` seconds to capture messages before the checkpoint
+    evicts them. This keeps a full, never-evicted message history available
+    for the frontend.
+    """
+    while True:
+        try:
+            for entry in registry.list_agents():
+                agent_id = entry["agent_id"]
+                info = registry.get_agent(agent_id)
+                if not info:
+                    continue
+                try:
+                    mounts = {m["name"]: m["path"] for m in info.get("mounts", [])}
+                    reader = ArionReader(info["workspace"], agent_id, mounts=mounts)
+                    threads = reader.list_threads("")
+                    for t in threads:
+                        tid = t["thread_id"]
+                        if t.get("has_checkpoint"):
+                            try:
+                                added = reader._sync_to_message_log(tid)
+                                if added:
+                                    logger.debug(
+                                        "message_log synced %d new messages for %s/%s",
+                                        added, agent_id, tid,
+                                    )
+                            except Exception:
+                                logger.debug("message_log sync failed for %s/%s", agent_id, tid, exc_info=True)
+                except Exception:
+                    logger.debug("message_log agent scan failed for %s", agent_id, exc_info=True)
+        except Exception:
+            logger.debug("message_log syncer iteration failed", exc_info=True)
+        await asyncio.sleep(interval)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from deploy_logging import install_asyncio_exception_handler
@@ -102,12 +139,19 @@ async def lifespan(app: FastAPI):
     global _dispatcher_task
     await state_machine.start()
     _dispatcher_task = asyncio.create_task(_queue_dispatcher())
+    _syncer_task = asyncio.create_task(_message_log_syncer())
     logger.info("Backend started on port %d", BACKEND_PORT)
     yield
     if _dispatcher_task:
         _dispatcher_task.cancel()
         try:
             await _dispatcher_task
+        except asyncio.CancelledError:
+            pass
+    if _syncer_task:
+        _syncer_task.cancel()
+        try:
+            await _syncer_task
         except asyncio.CancelledError:
             pass
     await state_machine.stop()
@@ -238,12 +282,12 @@ async def get_messages(
     reader = _reader(agent_id)
     pending = _queue(agent_id).list_pending(tid)
     page = reader.get_messages_page(tid, limit=limit, before_index=before_index)
+    all_msgs = page.pop("_all_msgs", None)
     thread_state = state_machine.get_agent_state(agent_id).get("threads", {}).get(tid, {})
     stream_draft = reader.get_stream_draft(tid) if thread_state.get("active") else None
     from turn_models import active_turn_model, load_task_models, slice_turn_models_for_window
 
     turn_models_full, task_models = load_task_models(events_file, agent_id, tid)
-    all_msgs = reader.get_all_messages(tid)
     turn_models = slice_turn_models_for_window(
         all_msgs, page["start_index"], page["end_index"], turn_models_full,
     )

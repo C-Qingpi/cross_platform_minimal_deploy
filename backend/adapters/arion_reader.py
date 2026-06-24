@@ -33,6 +33,172 @@ class ArionReader:
     def checkpoint_path(self) -> Path:
         return self.identity_dir / "checkpoints.sqlite"
 
+    def _message_log_db_path(self) -> Path:
+        return self.identity_dir / "message_log.db"
+
+    def _ensure_message_log_table(self, db: sqlite3.Connection) -> None:
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS messages (
+                thread_id   TEXT NOT NULL,
+                msg_index   INTEGER NOT NULL,
+                msg_key     TEXT NOT NULL,
+                role        TEXT NOT NULL,
+                type        TEXT NOT NULL DEFAULT 'message',
+                content     TEXT NOT NULL,
+                tool_calls  TEXT,
+                name        TEXT,
+                msg_id      TEXT,
+                created_at  TEXT DEFAULT (datetime('now')),
+                UNIQUE(thread_id, msg_key)
+            )
+        """)
+        db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_msg_thread
+            ON messages(thread_id, msg_index)
+        """)
+        db.commit()
+
+    def _sync_to_message_log(self, thread_id: str) -> int:
+        """Sync latest checkpoint messages into the persistent message log.
+
+        Returns the number of new messages added.
+        """
+        msgs = self._latest_checkpoint_messages(thread_id)
+        if not msgs:
+            return 0
+
+        db_path = self._message_log_db_path()
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        db = sqlite3.connect(str(db_path))
+        try:
+            self._ensure_message_log_table(db)
+
+            existing = {
+                row[0]
+                for row in db.execute(
+                    "SELECT msg_key FROM messages WHERE thread_id = ?", (thread_id,)
+                )
+            }
+            max_idx = db.execute(
+                "SELECT COALESCE(MAX(msg_index), -1) FROM messages WHERE thread_id = ?",
+                (thread_id,),
+            ).fetchone()[0]
+
+            new_rows: list[tuple] = []
+            for msg in msgs:
+                key = self._message_key(msg)
+                if key in existing:
+                    continue
+                max_idx += 1
+                existing.add(key)
+                role = msg.get("type", "unknown")
+                content = json.dumps(msg.get("content", ""), ensure_ascii=False)
+                tool_calls = (
+                    json.dumps(msg.get("tool_calls"), ensure_ascii=False)
+                    if msg.get("tool_calls")
+                    else None
+                )
+                new_rows.append((
+                    thread_id, max_idx, key, role,
+                    msg.get("type", "message"),
+                    content, tool_calls,
+                    msg.get("name"), msg.get("id"),
+                ))
+
+            if new_rows:
+                db.executemany(
+                    "INSERT OR IGNORE INTO messages "
+                    "(thread_id, msg_index, msg_key, role, type, content, tool_calls, name, msg_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    new_rows,
+                )
+                db.commit()
+            return len(new_rows)
+        finally:
+            db.close()
+
+    def _get_messages_from_log(self, thread_id: str) -> list[dict[str, Any]]:
+        """Return all messages for a thread from the persistent message log."""
+        db_path = self._message_log_db_path()
+        if not db_path.exists():
+            return []
+        db = sqlite3.connect(str(db_path))
+        try:
+            self._ensure_message_log_table(db)
+            rows = db.execute(
+                "SELECT role, type, content, tool_calls, name, msg_id "
+                "FROM messages WHERE thread_id = ? ORDER BY msg_index",
+                (thread_id,),
+            ).fetchall()
+        finally:
+            db.close()
+
+        messages: list[dict[str, Any]] = []
+        for role, mtype, content_str, tool_calls_str, name, msg_id in rows:
+            msg: dict[str, Any] = {
+                "type": role,
+                "content": json.loads(content_str) if content_str.startswith(("[", "{")) else content_str,
+            }
+            if msg_id:
+                msg["id"] = msg_id
+            if name:
+                msg["name"] = name
+            if tool_calls_str:
+                try:
+                    msg["tool_calls"] = json.loads(tool_calls_str)
+                except json.JSONDecodeError:
+                    pass
+            messages.append(msg)
+        return messages
+
+    def _bootstrap_message_log(self, thread_id: str) -> int:
+        """One-time bootstrap: copy display_log (full history) into message_log.db."""
+        display = self._load_display_log(thread_id)
+        if not display:
+            return 0
+
+        db_path = self._message_log_db_path()
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        db = sqlite3.connect(str(db_path))
+        try:
+            self._ensure_message_log_table(db)
+
+            # Check if already bootstrapped for this thread
+            existing_count = db.execute(
+                "SELECT COUNT(*) FROM messages WHERE thread_id = ?", (thread_id,)
+            ).fetchone()[0]
+            if existing_count > 0:
+                return 0
+
+            rows: list[tuple] = []
+            for idx, msg in enumerate(display):
+                key = self._message_key(msg)
+                role = msg.get("type", "unknown")
+                content = json.dumps(msg.get("content", ""), ensure_ascii=False)
+                tool_calls = (
+                    json.dumps(msg.get("tool_calls"), ensure_ascii=False)
+                    if msg.get("tool_calls")
+                    else None
+                )
+                rows.append((
+                    thread_id, idx, key, role,
+                    msg.get("type", "message"),
+                    content, tool_calls,
+                    msg.get("name"), msg.get("id"),
+                ))
+
+            if rows:
+                db.executemany(
+                    "INSERT OR IGNORE INTO messages "
+                    "(thread_id, msg_index, msg_key, role, type, content, tool_calls, name, msg_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    rows,
+                )
+                db.commit()
+            return len(rows)
+        finally:
+            db.close()
+
     def _display_log_path(self, thread_id: str) -> Path:
         return self.identity_dir / "display_log" / f"{thread_id}.jsonl"
 
@@ -140,6 +306,21 @@ class ArionReader:
         return updated
 
     def get_all_messages(self, thread_id: str) -> list[dict[str, Any]]:
+        # 1. Bootstrap: if message_log.db is empty for this thread,
+        #    seed it from the display_log (full history).
+        self._bootstrap_message_log(thread_id)
+
+        # 2. Sync latest checkpoint messages (catches any new messages
+        #    written since last sync).
+        self._sync_to_message_log(thread_id)
+
+        # 3. Read from persistent message_log.db (full history, never evicted)
+        from_log = self._get_messages_from_log(thread_id)
+        if from_log:
+            return from_log
+
+        # 4. Ultimate fallback: nothing in log, nothing in display_log —
+        #    try checkpoint directly.
         current = self._latest_checkpoint_messages(thread_id)
         if self.checkpoint_path.exists():
             return self._sync_display_log(thread_id, current)
@@ -166,6 +347,7 @@ class ArionReader:
             "start_index": start,
             "end_index": end,
             "has_older": start > 0,
+            "_all_msgs": all_msgs,  # internal — pop before sending to client
         }
 
     def get_messages(self, thread_id: str, limit: int = 200) -> list[dict[str, Any]]:

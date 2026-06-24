@@ -298,7 +298,7 @@ export const ConversationRoundView = memo(function ConversationRoundView({
       )}
       {round.human && (
         <div className="flex justify-end my-3">
-          <div className="max-w-[80%] rounded-2xl rounded-br-md bg-indigo-600 px-3.5 py-2 text-sm text-white whitespace-pre-wrap">
+          <div className="max-w-[80%] rounded-2xl rounded-br-md bg-indigo-600 px-3.5 py-2 text-sm text-white whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
             {typeof round.human.content === "string"
               ? stripUserMessageWrapper(round.human.content)
               : JSON.stringify(round.human.content)}
@@ -338,7 +338,7 @@ export const LogEntry = memo(function LogEntry({ msg }: { msg: Message }) {
       : JSON.stringify(msg.content);
     return (
       <div className="flex justify-end my-3">
-        <div className="max-w-[80%] rounded-2xl rounded-br-md bg-indigo-600 px-3.5 py-2 text-sm text-white whitespace-pre-wrap">
+        <div className="max-w-[80%] rounded-2xl rounded-br-md bg-indigo-600 px-3.5 py-2 text-sm text-white whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
           {text}
         </div>
       </div>

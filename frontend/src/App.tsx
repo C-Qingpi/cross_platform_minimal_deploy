@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { AgentInfo, ThreadInfo } from "./types/api";
 import { CreateAgentModal } from "./components/CreateAgentModal";
 import { SidebarPanel } from "./components/SidebarPanel";
@@ -6,7 +7,7 @@ import { PaginatedConversationLog } from "./components/PaginatedConversationLog"
 import { Toast } from "./components/Toast";
 import { useEventToasts } from "./hooks/useEventToasts";
 import { useDraftStorage } from "./hooks/useDraftStorage";
-import { useChatLog } from "./hooks/useChatLog";
+import { useMessagesQuery } from "./hooks/useMessagesQuery";
 import { attachTurnModels } from "./lib/turnModels";
 import { groupIntoRounds, messageStableKey } from "./lib/groupRounds";
 import * as api from "./lib/api";
@@ -31,7 +32,13 @@ function finalKeyForRound(round: ReturnType<typeof groupIntoRounds>[number], ind
   return messageStableKey(round.final, index * 1000 + 999);
 }
 
-export default function App() {
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { retry: false, refetchOnWindowFocus: false },
+  },
+});
+
+function AppContent() {
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [activeAgentId, setActiveAgentId] = useState(
     () => localStorage.getItem(ACTIVE_AGENT_KEY) || "default",
@@ -48,6 +55,7 @@ export default function App() {
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [sortVersion, setSortVersion] = useState(0);
   const [hamburgerOpen, setHamburgerOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [summaryDialogOpen, setSummaryDialogOpen] = useState(false);
 
   const knownFinalKeysRef = useRef<Set<string>>(new Set());
@@ -66,11 +74,12 @@ export default function App() {
     hasOlder,
     loadingOlder,
     loadOlder,
+    discardOlder,
     refreshTail,
     streamDraft,
     turnModels,
     activeTurnModel,
-  } = useChatLog(activeAgentId, activeThreadId);
+  } = useMessagesQuery(activeAgentId, activeThreadId);
 
   const threadActive = Boolean(agentState?.threads?.[activeThreadId]?.active);
   const threadStatus = agentState?.threads?.[activeThreadId]?.status;
@@ -309,6 +318,7 @@ export default function App() {
       if (t?.wrapping_enabled !== undefined) {
         setWrappingEnabled(t.wrapping_enabled);
       }
+      return; // wait for next render with correct messages before seeding keys
     }
     const rs = groupIntoRounds(messages);
     const keys = rs.map((r, i) => finalKeyForRound(r, i)).filter(Boolean) as string[];
@@ -460,84 +470,107 @@ export default function App() {
         onClose={() => setCreateAgentOpen(false)}
         onCreated={handleAgentCreated}
       />
-      <aside className="w-56 shrink-0 border-r border-slate-200 bg-white flex flex-col min-h-0">
-        <SidebarPanel
-          title="Agents"
-          expanded={expandedPanel === "agents"}
-          onToggleExpand={() => togglePanel("agents")}
-          collapsed={agentsCollapsed}
-          actions={
-            <>
-              <button type="button" onClick={handleCreateAgent} className="rounded-md bg-indigo-600 px-2 py-0.5 text-xs text-white">+</button>
-              <button type="button" onClick={handleDeleteAgent} className="rounded-md border border-slate-300 px-2 py-0.5 text-xs">Del</button>
-            </>
-          }
-        >
-          <div className="space-y-1">
-            {sortedAgents.map((a) => (
-              <button
-                key={a.agent_id}
-                type="button"
-                onClick={() => setActiveAgentId(a.agent_id)}
-                className={`w-full rounded-lg px-2 py-2 text-left text-sm ${
-                  a.agent_id === activeAgentId ? "bg-indigo-50 text-indigo-700" : "hover:bg-slate-50"
-                }`}
-              >
-                <div className="font-medium">{a.agent_id}</div>
-                <div className="text-xs text-slate-500 truncate">{a.state?.status || "offline"}</div>
-                {a.workspace && expandedPanel === "agents" && (
-                  <div className="text-[10px] text-slate-400 mt-1 break-all leading-tight">{a.workspace}</div>
-                )}
-              </button>
-            ))}
-          </div>
-        </SidebarPanel>
-
-        <SidebarPanel
-          title="Threads"
-          expanded={expandedPanel === "threads"}
-          onToggleExpand={() => togglePanel("threads")}
-          collapsed={threadsCollapsed}
-          actions={
-            <button type="button" onClick={handleCreateThread} className="rounded-md border border-slate-300 px-2 py-0.5 text-xs">+</button>
-          }
-        >
-          <div className="space-y-1">
-            {sortedThreads.map((t) => (
-              <div key={t.thread_id} className="group relative flex items-center rounded px-1 py-1 has-[[data-thread-menu]]:bg-slate-50">
-                <button
-                  type="button"
-                  onClick={() => markThreadUsed(t.thread_id)}
-                  className={`flex-1 rounded px-1.5 py-1 text-left text-xs ${
-                    t.thread_id === activeThreadId ? "bg-slate-100 font-medium" : "hover:bg-slate-50"
-                  }`}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span className="truncate">{t.name || t.thread_id}</span>
-                    {t.active && <span className="text-[10px] text-amber-600 shrink-0">●</span>}
-                  </div>
-                  {expandedPanel === "threads" && (
-                    <div className="text-[10px] text-slate-400 font-mono mt-0.5">{t.thread_id}</div>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  data-thread-menu-btn="true"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                    setMenuPosition({ x: rect.right, y: rect.bottom });
-                    setMenuOpenThreadId(menuOpenThreadId === t.thread_id ? null : t.thread_id);
-                  }}
-                  className="shrink-0 rounded px-1 py-1 text-xs text-slate-400 hover:text-slate-700 hover:bg-slate-200 opacity-0 group-hover:opacity-100 transition-opacity"
-                  title="Thread actions"
-                >
-                  ⋮
-                </button>
+      <aside className={`${sidebarCollapsed ? "w-9" : "w-56"} shrink-0 border-r border-slate-200 bg-white flex flex-col min-h-0 transition-[width] duration-200`}>
+        {sidebarCollapsed ? (
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed(false)}
+            className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-400 hover:bg-slate-50 hover:text-slate-600"
+            title="Show sidebar"
+          >
+            <span className="text-xs">▸</span>
+            <span className="text-[9px] leading-tight text-center" style={{ writingMode: "vertical-rl" }}>Show</span>
+          </button>
+        ) : (
+          <>
+            <SidebarPanel
+              title="Agents"
+              expanded={expandedPanel === "agents"}
+              onToggleExpand={() => togglePanel("agents")}
+              collapsed={agentsCollapsed}
+              actions={
+                <>
+                  <button type="button" onClick={handleCreateAgent} className="rounded-md bg-indigo-600 px-2 py-0.5 text-xs text-white">+</button>
+                  <button type="button" onClick={handleDeleteAgent} className="rounded-md border border-slate-300 px-2 py-0.5 text-xs">Del</button>
+                </>
+              }
+            >
+              <div className="space-y-1">
+                {sortedAgents.map((a) => (
+                  <button
+                    key={a.agent_id}
+                    type="button"
+                    onClick={() => setActiveAgentId(a.agent_id)}
+                    className={`w-full rounded-lg px-2 py-2 text-left text-sm ${
+                      a.agent_id === activeAgentId ? "bg-indigo-50 text-indigo-700" : "hover:bg-slate-50"
+                    }`}
+                  >
+                    <div className="font-medium">{a.agent_id}</div>
+                    <div className="text-xs text-slate-500 truncate">{a.state?.status || "offline"}</div>
+                    {a.workspace && expandedPanel === "agents" && (
+                      <div className="text-[10px] text-slate-400 mt-1 break-all leading-tight">{a.workspace}</div>
+                    )}
+                  </button>
+                ))}
               </div>
-            ))}
-          </div>
-        </SidebarPanel>
+            </SidebarPanel>
+
+            <SidebarPanel
+              title="Threads"
+              expanded={expandedPanel === "threads"}
+              onToggleExpand={() => togglePanel("threads")}
+              collapsed={threadsCollapsed}
+              actions={
+                <button type="button" onClick={handleCreateThread} className="rounded-md border border-slate-300 px-2 py-0.5 text-xs">+</button>
+              }
+            >
+              <div className="space-y-1">
+                {sortedThreads.map((t) => (
+                  <div key={t.thread_id} className="group relative flex items-center rounded px-1 py-1 has-[[data-thread-menu]]:bg-slate-50">
+                    <button
+                      type="button"
+                      onClick={() => markThreadUsed(t.thread_id)}
+                      className={`flex-1 rounded px-1.5 py-1 text-left text-xs ${
+                        t.thread_id === activeThreadId ? "bg-slate-100 font-medium" : "hover:bg-slate-50"
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span className="truncate">{t.name || t.thread_id}</span>
+                        {t.active && <span className="text-[10px] text-amber-600 shrink-0">●</span>}
+                      </div>
+                      {expandedPanel === "threads" && (
+                        <div className="text-[10px] text-slate-400 font-mono mt-0.5">{t.thread_id}</div>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      data-thread-menu-btn="true"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                        setMenuPosition({ x: rect.right, y: rect.bottom });
+                        setMenuOpenThreadId(menuOpenThreadId === t.thread_id ? null : t.thread_id);
+                      }}
+                      className="shrink-0 rounded px-1 py-1 text-xs text-slate-400 hover:text-slate-700 hover:bg-slate-200 opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Thread actions"
+                    >
+                      ⋮
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </SidebarPanel>
+
+            <button
+              type="button"
+              onClick={() => setSidebarCollapsed(true)}
+              className="shrink-0 border-t border-slate-200 py-1.5 text-[11px] text-slate-400 hover:bg-slate-50 hover:text-slate-600"
+              title="Collapse sidebar"
+            >
+              ◂ Collapse
+            </button>
+          </>
+        )}
       </aside>
 
       <div className="flex flex-1 flex-col min-w-0 min-h-0 overflow-hidden">
@@ -639,6 +672,7 @@ export default function App() {
           streamDraft={streamDraft}
           activeTurnModel={activeTurnModel}
           onLoadOlder={loadOlder}
+          onDiscardOlder={discardOlder}
         />
 
         <footer className="relative z-20 shrink-0 border-t border-slate-200 bg-white px-4 py-3">
@@ -740,5 +774,13 @@ export default function App() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AppContent />
+    </QueryClientProvider>
   );
 }
