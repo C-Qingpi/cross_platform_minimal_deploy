@@ -95,6 +95,15 @@ class MessageLogger:
     def _ensure_schema(self) -> None:
         conn = sqlite3.connect(str(self.db_path))
         try:
+            # Schema version — v1 DBs lack msg_json, must be rebuilt
+            existing = conn.execute(
+                "SELECT value FROM meta WHERE key = 'schema_version'"
+            ).fetchone()
+            if not existing or existing[0] != "2":
+                conn.execute("DROP TABLE IF EXISTS messages")
+                conn.execute("DROP TABLE IF EXISTS summaries")
+                conn.execute("DROP TABLE IF EXISTS meta")
+
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS messages (
                     thread_id    TEXT NOT NULL,
@@ -115,17 +124,9 @@ class MessageLogger:
                     value TEXT NOT NULL
                 )
             """)
-            # Schema version — if missing, wipe and recreate
-            existing = conn.execute(
-                "SELECT value FROM meta WHERE key = 'schema_version'"
-            ).fetchone()
-            if not existing or existing[0] != "1":
-                conn.execute("DELETE FROM messages")
-                conn.execute("DELETE FROM summaries")
-                conn.execute("DELETE FROM meta")
-                conn.execute(
-                    "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '1')"
-                )
+            conn.execute(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '2')"
+            )
             conn.commit()
         finally:
             conn.close()
