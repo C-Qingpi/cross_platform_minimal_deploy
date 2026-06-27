@@ -268,7 +268,7 @@ async def get_messages(
     pending = _queue(agent_id).list_pending(tid)
     # Run blocking checkpoint ops in thread pool so event loop stays free
     page = await asyncio.to_thread(
-        reader.get_messages_page, tid,
+        reader.get_messages_page_cached, tid,
         num_pages=num_pages,
         before_checkpoint_id=before_checkpoint_id,
     )

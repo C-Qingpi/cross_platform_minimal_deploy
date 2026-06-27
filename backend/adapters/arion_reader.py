@@ -28,6 +28,8 @@ class ArionReader:
         self.identity_dir = self.workspace / ".arion" / "agents" / agent_id
         self.inbox_dir = self.workspace / ".arion" / "inbox"
         self._mount_paths = {n: Path(p).resolve() for n, p in (mounts or {}).items()}
+        # Cache: (thread_id, max_checkpoint_id, count) → page dict + roles
+        self._page_cache: dict[str, tuple[tuple[str | None, int | None], dict[str, Any]]] = {}
 
     @property
     def checkpoint_path(self) -> Path:
@@ -234,6 +236,50 @@ class ArionReader:
     def get_messages(self, thread_id: str, num_pages: int = 3) -> list[dict[str, Any]]:
         page = self.get_messages_page(thread_id, num_pages=num_pages)
         return page["messages"]
+
+    def get_messages_page_cached(
+        self,
+        thread_id: str,
+        *,
+        num_pages: int = 3,
+        before_checkpoint_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Cached variant of get_messages_page.
+
+        Checks checkpoint fingerprint via raw SQL (~0.5 ms). When unchanged,
+        returns the cached result. Only calls the expensive checkpoint
+        deserialization when a new checkpoint appears or count changes (pruning).
+        """
+        cache_key = f"{thread_id}:{num_pages}:{before_checkpoint_id or ''}"
+        db_path = str(self.checkpoint_path)
+        fingerprint: tuple[str | None, int | None] = (None, None)
+
+        if os.path.isfile(db_path):
+            conn = sqlite3.connect(db_path)
+            try:
+                row = conn.execute(
+                    "SELECT MAX(checkpoint_id), COUNT(*) FROM checkpoints WHERE thread_id = ?",
+                    (thread_id,),
+                ).fetchone()
+                if row:
+                    fingerprint = (row[0], row[1])
+            finally:
+                conn.close()
+
+        # Cache hit: same (max_id, count) fingerprint
+        cached = self._page_cache.get(cache_key)
+        if cached and cached[0] == fingerprint and fingerprint[0] is not None:
+            # Return a copy — callers mutate (pop _roles, etc.)
+            return dict(cached[1])
+
+        # Cache miss — compute and store (store a copy to protect from callers)
+        result = self.get_messages_page(
+            thread_id,
+            num_pages=num_pages,
+            before_checkpoint_id=before_checkpoint_id,
+        )
+        self._page_cache[cache_key] = (fingerprint, dict(result))
+        return result
 
     # ── Checkpoint pruning ──────────────────────────────────────
 
