@@ -33,7 +33,7 @@ function ThoughtBlock({
 }) {
   return (
     <div
-      className={`min-w-0 max-w-full rounded-lg border border-violet-200 bg-violet-50/80 px-3 py-2 text-sm text-slate-700 whitespace-pre-wrap break-words [overflow-wrap:anywhere] ${className}`}
+      className={`min-w-0 max-w-full rounded-lg border border-violet-200 bg-violet-50/80 px-3 py-2 text-sm text-slate-700 whitespace-pre-wrap break-words [overflow-wrap:anywhere] select-text ${className}`}
     >
       <span className="text-xs font-medium uppercase tracking-wide text-violet-600">Thinking</span>
       <div className="mt-1">{children ?? text}</div>
@@ -57,7 +57,7 @@ function ToolBlock({
   const title = name ? `${name}` : "";
 
   return (
-    <div className="min-w-0 max-w-full text-sm border-l-2 border-slate-300 pl-3 py-0.5">
+    <div className="min-w-0 max-w-full text-sm border-l-2 border-slate-300 pl-3 py-0.5 select-text">
       <button
         type="button"
         onClick={() => setOpen(!open)}
@@ -254,7 +254,7 @@ function FinalReply({
       )}
       {msg.reasoning && <ThoughtBlock text={msg.reasoning} />}
       {text.trim() && (
-        <div className="min-w-0 max-w-full overflow-hidden rounded-2xl rounded-bl-md border border-slate-200 bg-white px-3.5 py-2 text-sm shadow-sm">
+        <div className="min-w-0 max-w-full overflow-hidden rounded-2xl rounded-bl-md border border-slate-200 bg-white px-3.5 py-2 text-sm shadow-sm select-text">
           <TypewriterText
             text={text}
             animate={animate}
@@ -298,7 +298,7 @@ export const ConversationRoundView = memo(function ConversationRoundView({
       )}
       {round.human && (
         <div className="flex justify-end my-3">
-          <div className="max-w-[80%] rounded-2xl rounded-br-md bg-indigo-600 px-3.5 py-2 text-sm text-white whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+          <div className="max-w-[80%] rounded-2xl rounded-br-md bg-indigo-600 px-3.5 py-2 text-sm text-white whitespace-pre-wrap break-words [overflow-wrap:anywhere] select-text">
             {typeof round.human.content === "string"
               ? stripUserMessageWrapper(round.human.content)
               : JSON.stringify(round.human.content)}
