@@ -295,16 +295,17 @@ async def get_messages(
     # When absent (tail request): show the last (num_pages * MESSAGES_PER_PAGE) messages.
     offset: int = 0
     limit = num_pages * MESSAGES_PER_PAGE
-    tail_mode = not before_checkpoint_id
+    tail_mode = True  # default: show latest
 
     if before_checkpoint_id and before_checkpoint_id.startswith("msg:"):
         try:
             cursor_index = int(before_checkpoint_id[4:])
+            tail_mode = False
             # "before N" means show messages up to (but not including) N
             offset = max(0, cursor_index - limit)
             limit = cursor_index - offset
         except (ValueError, IndexError):
-            tail_mode = True  # malformed cursor → fall back to tail
+            pass  # malformed → stay tail_mode
 
     # Fast count (no JSON parsing) to determine tail offset
     total = logger.count(tid)
