@@ -85,10 +85,12 @@ function AppContent() {
   const threadStatus = agentState?.threads?.[activeThreadId]?.status;
   const { toast, showToast } = useEventToasts(activeAgentId, activeThreadId, agentState);
 
-  // ── Cross-agent job-done chime + toast ────────────────────
+  // ── Cross-agent job-done chime + toast + poll agents list ──
   const audioCtxRef = useRef<AudioContext | null>(null);
   // Map: agentId → Set of threadIds that were active/summarizing last poll
   const prevAllActiveRef = useRef(new Map<string, Set<string>>());
+  // Avoid re-renders: only update agents state when data actually changes
+  const prevAgentsHashRef = useRef("");
   useEffect(() => {
     let cancelled = false;
 
@@ -100,6 +102,17 @@ function AppContent() {
         return;
       }
       if (cancelled) return;
+
+      // Keep agents state live for sidebar — only update on change
+      const hash = JSON.stringify(allAgents.map((a) => ({
+        id: a.agent_id,
+        status: a.state?.status,
+        active: Object.values(a.state?.threads ?? {}).filter((t) => t.active).length,
+      })));
+      if (hash !== prevAgentsHashRef.current) {
+        prevAgentsHashRef.current = hash;
+        setAgents(allAgents as AgentInfo[]);
+      }
 
       // Build current active set: agentId → Set<threadId>
       const nowActive = new Map<string, Set<string>>();
@@ -533,7 +546,10 @@ function AppContent() {
               }
             >
               <div className="space-y-1">
-                {sortedAgents.map((a) => (
+                {sortedAgents.map((a) => {
+                  const runningThreads = Object.values(a.state?.threads ?? {}).filter((t) => t.active);
+                  const runningCount = runningThreads.length;
+                  return (
                   <button
                     key={a.agent_id}
                     type="button"
@@ -542,13 +558,27 @@ function AppContent() {
                       a.agent_id === activeAgentId ? "bg-indigo-50 text-indigo-700" : "hover:bg-slate-50"
                     }`}
                   >
-                    <div className="font-medium">{a.agent_id}</div>
+                    <div className="flex items-center gap-1.5 font-medium">
+                      {runningCount > 0 && (
+                        <span className="relative flex h-2 w-2 shrink-0">
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                          <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                        </span>
+                      )}
+                      {a.agent_id}
+                      {runningCount > 0 && (
+                        <span className="ml-auto text-[10px] font-normal text-emerald-600 tabular-nums">
+                          {runningCount}
+                        </span>
+                      )}
+                    </div>
                     <div className="text-xs text-slate-500 truncate">{a.state?.status || "offline"}</div>
                     {a.workspace && expandedPanel === "agents" && (
                       <div className="text-[10px] text-slate-400 mt-1 break-all leading-tight">{a.workspace}</div>
                     )}
                   </button>
-                ))}
+                  );
+                })}
               </div>
             </SidebarPanel>
 
