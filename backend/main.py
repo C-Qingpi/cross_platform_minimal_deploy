@@ -255,6 +255,7 @@ async def delete_agent(agent_id: str, remove_workspace: bool = Query(False)):
     if "error" in result:
         raise HTTPException(404, result["error"])
     _queues.pop(agent_id, None)
+    _loggers.pop(agent_id, None)
     return result
 
 
@@ -315,8 +316,8 @@ async def get_messages(
 
     all_messages, _ = logger.get_messages(tid, offset=offset, limit=limit)
 
-    # Build role list for turn_models slicing
-    roles = [(m.get("type", "unknown"), i) for i, m in enumerate(all_messages)]
+    # Build role list for turn_models slicing — use GLOBAL msg_index values
+    roles = [(m.get("type", "unknown"), offset + i) for i, m in enumerate(all_messages)]
 
     summary = logger.get_summary(tid)
     thread_state = state_machine.get_agent_state(agent_id).get("threads", {}).get(tid, {})
@@ -326,7 +327,7 @@ async def get_messages(
 
     turn_models_full, task_models = load_task_models(events_file, agent_id, tid)
     turn_models = slice_turn_models_for_window(
-        roles, 0, len(all_messages), turn_models_full,
+        roles, offset, offset + len(all_messages), turn_models_full,
     )
     active_model = active_turn_model(task_models, thread_state.get("active_message_id"))
 
