@@ -25,6 +25,7 @@ sys.path.insert(0, str(BACKEND_DIR))
 from deploy_logging import setup_service_logging
 from agent_registry import AgentRegistry, default_thread_id
 from adapters.arion_reader import ArionReader
+from adapters.message_log import MessageLogger
 from agent_state import AgentStateMachine
 from agent_events import read_events
 from fs_browser import browse, list_roots
@@ -48,6 +49,7 @@ events_file = DEPLOY_ROOT / ".arion" / "events.jsonl"
 state_machine = AgentStateMachine(events_file)
 
 _queues: dict[str, MessageQueue] = {}
+_loggers: dict[str, MessageLogger] = {}
 
 
 def _reader(agent_id: str) -> ArionReader:
@@ -56,6 +58,16 @@ def _reader(agent_id: str) -> ArionReader:
         raise HTTPException(404, f"Agent not found: {agent_id}")
     mounts = {m["name"]: m["path"] for m in info.get("mounts", [])}
     return ArionReader(info["workspace"], agent_id, mounts=mounts)
+
+
+def _logger(agent_id: str) -> MessageLogger:
+    if agent_id not in _loggers:
+        info = registry.get_agent(agent_id)
+        if info is None:
+            raise HTTPException(404, f"Agent not found: {agent_id}")
+        identity_dir = Path(info["workspace"]) / ".arion" / "agents" / agent_id
+        _loggers[agent_id] = MessageLogger(identity_dir)
+    return _loggers[agent_id]
 
 
 def _queue(agent_id: str) -> MessageQueue:
@@ -265,26 +277,38 @@ async def get_messages(
 ):
     tid = thread_id or default_thread_id(agent_id)
     reader = _reader(agent_id)
+    logger = _logger(agent_id)
     pending = _queue(agent_id).list_pending(tid)
-    # Run blocking checkpoint ops in thread pool so event loop stays free
-    page = await asyncio.to_thread(
-        reader.get_messages_page_cached, tid,
-        num_pages=num_pages,
-        before_checkpoint_id=before_checkpoint_id,
-    )
-    roles = page.pop("_roles", [])
+
+    # Sync: extract messages from latest checkpoint into message_log
+    # (no-op when no new checkpoints — just counts rows)
+    logger.sync(reader.checkpoint_path, tid)
+
+    # Read from materialized message log (~1-5ms, flat SQL query)
+    messages, total = logger.get_messages(tid)
+    summary = logger.get_summary(tid)
+
+    # Build role list for turn_models slicing
+    roles = [(m.get("type", "unknown"), i) for i, m in enumerate(messages)]
+
     thread_state = state_machine.get_agent_state(agent_id).get("threads", {}).get(tid, {})
     stream_draft = reader.get_stream_draft(tid) if thread_state.get("active") else None
-    from turn_models import active_turn_model, load_task_models, slice_turn_models_for_window
 
+    from turn_models import active_turn_model, load_task_models, slice_turn_models_for_window
     turn_models_full, task_models = load_task_models(events_file, agent_id, tid)
     turn_models = slice_turn_models_for_window(
-        roles, page["start_index"], page["end_index"], turn_models_full,
+        roles, 0, len(messages), turn_models_full,
     )
     active_model = active_turn_model(task_models, thread_state.get("active_message_id"))
+
     return {
-        **page,
-        "summary": reader.get_summary(tid),
+        "messages": messages,
+        "total": total,
+        "start_index": 0,
+        "end_index": len(messages),
+        "has_older": False,  # message_log returns all messages; pagination TBD
+        "before_checkpoint_id": None,
+        "summary": summary,
         "thread_state": thread_state,
         "queue": [e.to_dict() for e in pending],
         "stream_draft": stream_draft,
