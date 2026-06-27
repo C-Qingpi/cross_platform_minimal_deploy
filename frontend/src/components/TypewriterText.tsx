@@ -86,7 +86,7 @@ export function TypewriterText({
 
   if (!markdown || !done) {
     return (
-      <span className={`whitespace-pre-wrap ${className}`}>
+      <span className={`whitespace-pre-wrap select-text ${className}`}>
         {slice}
         {animate && !done && (
           <span className="inline-block w-0.5 h-3.5 ml-0.5 bg-indigo-400/80 animate-pulse align-middle" />
