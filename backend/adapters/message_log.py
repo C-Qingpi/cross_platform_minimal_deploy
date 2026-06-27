@@ -13,8 +13,6 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-import msgpack
-
 logger = logging.getLogger(__name__)
 
 # ── Message serialization (mirrors arion_reader._serialize_message) ──
@@ -117,11 +115,34 @@ class MessageLogger:
                     value TEXT NOT NULL
                 )
             """)
+            # Schema version — if missing, wipe and recreate
+            existing = conn.execute(
+                "SELECT value FROM meta WHERE key = 'schema_version'"
+            ).fetchone()
+            if not existing or existing[0] != "1":
+                conn.execute("DELETE FROM messages")
+                conn.execute("DELETE FROM summaries")
+                conn.execute("DELETE FROM meta")
+                conn.execute(
+                    "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '1')"
+                )
             conn.commit()
         finally:
             conn.close()
 
     # ── Read ────────────────────────────────────────────────────
+
+    def count(self, thread_id: str) -> int:
+        """Fast count of messages for a thread (no JSON parsing)."""
+        conn = sqlite3.connect(str(self.db_path))
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM messages WHERE thread_id = ?",
+                (thread_id,),
+            ).fetchone()
+            return row[0] if row else 0
+        finally:
+            conn.close()
 
     def get_messages(
         self,
@@ -170,9 +191,12 @@ class MessageLogger:
     def sync(self, checkpoint_path: Path, thread_id: str) -> int:
         """Extract messages from the latest checkpoint and append to log.
 
+        Uses LangGraph's SqliteSaver for deserialization (checkpoints use
+        custom msgpack ExtType that requires LangGraph to decode). Only
+        fetches the LATEST checkpoint (O(1), not O(n)).
+
         Handles compression: if the checkpoint has fewer messages than the log,
-        rebuilds from scratch (compression is lossy — old messages are
-        intentionally summarized and removed).
+        rebuilds from scratch.
 
         Skips entirely if the latest checkpoint_id hasn't changed since last sync.
 
@@ -181,7 +205,7 @@ class MessageLogger:
         if not checkpoint_path.exists():
             return 0
 
-        # Quick fingerprint: latest checkpoint_id
+        # Quick fingerprint: latest checkpoint_id (raw SQL, no deserialization)
         conn = sqlite3.connect(str(checkpoint_path))
         try:
             row = conn.execute(
@@ -209,34 +233,26 @@ class MessageLogger:
         if stored and stored[0] == latest_cid:
             return 0  # Nothing new
 
-        # Read the checkpoint blob
+        # Deserialize ONLY the latest checkpoint via LangGraph
+        from langgraph.checkpoint.sqlite import SqliteSaver
         conn = sqlite3.connect(str(checkpoint_path))
         try:
-            row = conn.execute(
-                "SELECT checkpoint FROM checkpoints WHERE checkpoint_id = ?",
-                (latest_cid,),
-            ).fetchone()
+            saver = SqliteSaver(conn)
+            cp_tuple = saver.get_tuple({"configurable": {"thread_id": thread_id}})
         finally:
             conn.close()
 
-        if not row:
+        if not cp_tuple:
             return 0
 
-        blob = row[0]
-        try:
-            data = msgpack.unpackb(blob)
-        except Exception:
-            logger.warning("Failed to unpack checkpoint for %s", thread_id)
-            return 0
-
-        channel_values = data.get("channel_values", {})
+        channel_values = cp_tuple.checkpoint.get("channel_values", {})
         raw_messages = channel_values.get("messages", [])
         summary = channel_values.get("summary", "")
 
         if not raw_messages:
             return 0
 
-        # Serialize messages
+        # Serialize messages (now genuine LangChain objects, not ExtType)
         serialized = _serialize_message_list(raw_messages)
         checkpoint_count = len(serialized)
 
@@ -248,8 +264,7 @@ class MessageLogger:
             ).fetchone()[0]
 
             if checkpoint_count < current_count:
-                # Compression happened — checkpoint lost old messages.
-                # Rebuild message_log from checkpoint.
+                # Compression happened — rebuild
                 log_conn.execute("DELETE FROM messages WHERE thread_id = ?", (thread_id,))
                 for i, msg in enumerate(serialized):
                     log_conn.execute(
@@ -267,11 +282,11 @@ class MessageLogger:
             new_count = 0
             for i in range(current_count, checkpoint_count):
                 msg = serialized[i]
-                log_conn.execute(
+                cur = log_conn.execute(
                     "INSERT OR IGNORE INTO messages (thread_id, msg_index, msg_json) VALUES (?, ?, ?)",
                     (thread_id, i, json.dumps(msg, ensure_ascii=False)),
                 )
-                if log_conn.changes:
+                if cur.rowcount > 0:
                     new_count += 1
 
             if summary:
