@@ -61,10 +61,27 @@ export function useMessagesQuery(agentId: string, threadId: string) {
 
   messagesRef.current = messages;
 
+  // ── Clear display on thread switch (before fetch completes) ───
+  useEffect(() => {
+    setMessages([]);
+    setSummary("");
+    setStreamDraft(null);
+    setTurnModels([]);
+    setActiveTurnModel(null);
+    setHasOlder(false);
+    beforeCheckpointRef.current = null;
+    totalRef.current = 0;
+    prevQueryRef.current = `${agentId}:${threadId}`;
+  }, [agentId, threadId]);
+
   // ── Merge poll page into display ──────────────────────────────
   useEffect(() => {
     const page = pageQuery.data as MessagesResponse | undefined;
     if (!page) return;
+
+    // Guard: discard data from a stale query (wrong thread)
+    const firstMsg = page.messages[0];
+    if (firstMsg && firstMsg.thread_id !== threadId) return;
 
     setSummary(page.summary);
     setStreamDraft(page.stream_draft ?? null);
