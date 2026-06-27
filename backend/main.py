@@ -25,6 +25,7 @@ sys.path.insert(0, str(BACKEND_DIR))
 from deploy_logging import setup_service_logging
 from agent_registry import AgentRegistry, default_thread_id
 from adapters.arion_reader import ArionReader
+from adapters.message_log import MessageLogger
 from agent_state import AgentStateMachine
 from agent_events import read_events
 from fs_browser import browse, list_roots
@@ -48,6 +49,7 @@ events_file = DEPLOY_ROOT / ".arion" / "events.jsonl"
 state_machine = AgentStateMachine(events_file)
 
 _queues: dict[str, MessageQueue] = {}
+_loggers: dict[str, MessageLogger] = {}
 
 
 def _reader(agent_id: str) -> ArionReader:
@@ -56,6 +58,16 @@ def _reader(agent_id: str) -> ArionReader:
         raise HTTPException(404, f"Agent not found: {agent_id}")
     mounts = {m["name"]: m["path"] for m in info.get("mounts", [])}
     return ArionReader(info["workspace"], agent_id, mounts=mounts)
+
+
+def _logger(agent_id: str) -> MessageLogger:
+    if agent_id not in _loggers:
+        info = registry.get_agent(agent_id)
+        if info is None:
+            raise HTTPException(404, f"Agent not found: {agent_id}")
+        identity_dir = Path(info["workspace"]) / ".arion" / "agents" / agent_id
+        _loggers[agent_id] = MessageLogger(identity_dir)
+    return _loggers[agent_id]
 
 
 
@@ -257,6 +269,11 @@ async def get_agent_state(agent_id: str = Query("default")):
     return state
 
 
+# ── Pagination ──────────────────────────────────────────────────
+
+MESSAGES_PER_PAGE = 50  # flat page size (old system used variable compression windows)
+
+
 @app.get("/api/messages")
 async def get_messages(
     agent_id: str = Query("default"),
@@ -266,32 +283,66 @@ async def get_messages(
 ):
     tid = thread_id or default_thread_id(agent_id)
     reader = _reader(agent_id)
+    logger = _logger(agent_id)
     pending = _queue(agent_id).list_pending(tid)
-    # Run blocking checkpoint ops in thread pool so event loop stays free
-    page = await asyncio.to_thread(
-        reader.get_messages_page, tid,
-        num_pages=num_pages,
-        before_checkpoint_id=before_checkpoint_id,
-    )
-    roles = page.pop("_roles", [])
-    summary = reader.get_summary(tid)
+
+    # Sync: extract new messages from latest checkpoint (no-op when unchanged)
+    logger.sync(reader.checkpoint_path, tid)
+
+    # ── Pagination: offset from cursor ───────────────────────────
+    # before_checkpoint_id is "msg:N" where N is the msg_index to start before.
+    # When absent (tail request): show the last (num_pages * MESSAGES_PER_PAGE) messages.
+    offset: int = 0
+    limit = num_pages * MESSAGES_PER_PAGE
+    tail_mode = not before_checkpoint_id
+
+    if before_checkpoint_id and before_checkpoint_id.startswith("msg:"):
+        try:
+            cursor_index = int(before_checkpoint_id[4:])
+            # "before N" means show messages up to (but not including) N
+            offset = max(0, cursor_index - limit)
+            limit = cursor_index - offset
+        except (ValueError, IndexError):
+            tail_mode = True  # malformed cursor → fall back to tail
+
+    # Fast count (no JSON parsing) to determine tail offset
+    total = logger.count(tid)
+
+    if tail_mode and total > limit:
+        offset = total - limit
+    elif tail_mode:
+        offset = 0
+
+    all_messages, _ = logger.get_messages(tid, offset=offset, limit=limit)
+
+    # Build role list for turn_models slicing
+    roles = [(m.get("type", "unknown"), i) for i, m in enumerate(all_messages)]
+
+    summary = logger.get_summary(tid)
     thread_state = state_machine.get_agent_state(agent_id).get("threads", {}).get(tid, {})
     stream_draft = reader.get_stream_draft(tid) if thread_state.get("active") else None
+
     from turn_models import active_turn_model, load_task_models, slice_turn_models_for_window
 
     turn_models_full, task_models = load_task_models(events_file, agent_id, tid)
     turn_models = slice_turn_models_for_window(
-        roles, page["start_index"], page["end_index"], turn_models_full,
+        roles, 0, len(all_messages), turn_models_full,
     )
     active_model = active_turn_model(task_models, thread_state.get("active_message_id"))
 
+    # Cursor for loading the next older page: the global msg_index of the
+    # first message in this window (or null if at the very beginning).
+    first_index = offset  # global index of the first message returned
+    has_older = offset > 0
+    next_cursor = f"msg:{first_index}" if has_older else None
+
     return {
-        "messages": page["messages"],
-        "total": page["total"],
-        "start_index": page["start_index"],
-        "end_index": page["end_index"],
-        "has_older": page["has_older"],
-        "before_checkpoint_id": page.get("before_checkpoint_id"),
+        "messages": all_messages,
+        "total": total,
+        "start_index": offset,
+        "end_index": offset + len(all_messages),
+        "has_older": has_older,
+        "before_checkpoint_id": next_cursor,
         "summary": summary,
         "thread_state": thread_state,
         "queue": [e.to_dict() for e in pending],

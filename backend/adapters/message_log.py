@@ -132,6 +132,18 @@ class MessageLogger:
 
     # ── Read ────────────────────────────────────────────────────
 
+    def count(self, thread_id: str) -> int:
+        """Fast count of messages for a thread (no JSON parsing)."""
+        conn = sqlite3.connect(str(self.db_path))
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM messages WHERE thread_id = ?",
+                (thread_id,),
+            ).fetchone()
+            return row[0] if row else 0
+        finally:
+            conn.close()
+
     def get_messages(
         self,
         thread_id: str,
