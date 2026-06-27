@@ -52,6 +52,16 @@ export function useEventToasts(
       const page = await api.fetchEvents(lastIndexRef.current, activeAgentId);
       lastIndexRef.current = page.next_index;
 
+      // First pass: collect threads that have a task_started in this batch.
+      // A task_cancelled immediately followed by task_started = follow-up
+      // interrupt, not a genuine stop → suppress the "Agent stopped" toast.
+      const resumedThreads = new Set<string>();
+      for (const ev of page.events) {
+        if (ev.event === "task_started" && ev.thread) {
+          resumedThreads.add(ev.thread);
+        }
+      }
+
       let nextToast: ToastState | null = null;
       for (const ev of page.events) {
         if (!shouldShowEventToast(ev, activeAgentId, activeThreadId)) continue;
@@ -60,6 +70,11 @@ export function useEventToasts(
         if (ev.event === "summarizing") {
           nextToast = { message: ev.toast, ms };
           break;
+        }
+        // Suppress "Agent stopped" toast when the turn was only interrupted
+        // for a follow-up message (task_started follows in the same batch).
+        if (ev.event === "task_cancelled" && ev.thread && resumedThreads.has(ev.thread)) {
+          continue;
         }
         nextToast = { message: ev.toast, ms };
       }
