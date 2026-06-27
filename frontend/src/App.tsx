@@ -105,42 +105,44 @@ function AppContent() {
     prevActiveIdsRef.current = nowActive;
 
     if (justFinished && prev.size > 0) {
-      try {
-        let ctx = audioCtxRef.current;
-        if (!ctx || ctx.state === "closed") {
-          ctx = new AudioContext();
-          audioCtxRef.current = ctx;
-        }
-        if (ctx.state === "suspended") {
-          void ctx.resume();
-        }
-        // Blues charm — ascending C blues scale lick with overlapping notes
-        const notes = [
-          { freq: 523, start: 0.00 },  // C5
-          { freq: 622, start: 0.13 },  // Eb5 ♭3
-          { freq: 698, start: 0.26 },  // F5
-          { freq: 740, start: 0.38 },  // Gb5 ♭5 — blue note
-          { freq: 784, start: 0.50 },  // G5
-          { freq: 1047, start: 0.63 }, // C6
-        ];
-        const vol = 0.25;
-        const ring = 0.35; // each note rings ~350ms (overlaps next)
-        for (const n of notes) {
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.type = "sine";
-          osc.frequency.value = n.freq;
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          const t = ctx.currentTime + n.start;
-          osc.start(t);
-          osc.stop(t + ring);
-          gain.gain.setValueAtTime(vol, t);
-          gain.gain.exponentialRampToValueAtTime(0.001, t + ring);
-        }
+      (async () => {
+        try {
+          let ctx = audioCtxRef.current;
+          if (!ctx || ctx.state === "closed") {
+            ctx = new AudioContext();
+            audioCtxRef.current = ctx;
+          }
+          if (ctx.state === "suspended") {
+            await ctx.resume();
+          }
+          // Blues charm — ascending C blues scale lick with overlapping notes
+          const notes = [
+            { freq: 523, start: 0.00 },  // C5
+            { freq: 622, start: 0.13 },  // Eb5 ♭3
+            { freq: 698, start: 0.26 },  // F5
+            { freq: 740, start: 0.38 },  // Gb5 ♭5 — blue note
+            { freq: 784, start: 0.50 },  // G5
+            { freq: 1047, start: 0.63 }, // C6
+          ];
+          const vol = 0.25;
+          const ring = 0.35; // each note rings ~350ms (overlaps next)
+          for (const n of notes) {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = "sine";
+            osc.frequency.value = n.freq;
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            const t = ctx.currentTime + n.start;
+            osc.start(t);
+            osc.stop(t + ring);
+            gain.gain.setValueAtTime(vol, t);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + ring);
+          }
       } catch {
         // AudioContext may not be available (e.g., no user gesture yet)
       }
+      })();
     }
   }, [agentState]);
 
