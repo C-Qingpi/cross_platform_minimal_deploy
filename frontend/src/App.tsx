@@ -87,6 +87,29 @@ function AppContent() {
 
   // ── Cross-agent job-done chime + toast + poll agents list ──
   const audioCtxRef = useRef<AudioContext | null>(null);
+
+  // Prime AudioContext on first user interaction — browsers require a
+  // user gesture before allowing audio (autoplay policy). Without this,
+  // the AudioContext stays "suspended" and the chime is silent.
+  useEffect(() => {
+    const create = () => {
+      if (audioCtxRef.current && audioCtxRef.current.state !== "closed") return;
+      try {
+        const ctx = new AudioContext();
+        audioCtxRef.current = ctx;
+        if (ctx.state === "suspended") ctx.resume();
+      } catch { /* AudioContext not available */ }
+    };
+    window.addEventListener("mousedown", create, { once: true });
+    window.addEventListener("keydown", create, { once: true });
+    window.addEventListener("touchstart", create, { once: true });
+    return () => {
+      window.removeEventListener("mousedown", create);
+      window.removeEventListener("keydown", create);
+      window.removeEventListener("touchstart", create);
+    };
+  }, []);
+
   // Map: agentId → Set of threadIds that were active/summarizing last poll
   const prevAllActiveRef = useRef(new Map<string, Set<string>>());
   // Avoid re-renders: only update agents state when data actually changes
