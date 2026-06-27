@@ -79,10 +79,6 @@ export function useMessagesQuery(agentId: string, threadId: string) {
     const page = pageQuery.data as MessagesResponse | undefined;
     if (!page) return;
 
-    // Guard: discard data from a stale query (wrong thread)
-    const firstMsg = page.messages[0];
-    if (firstMsg && firstMsg.thread_id !== threadId) return;
-
     setSummary(page.summary);
     setStreamDraft(page.stream_draft ?? null);
     setTurnModels(page.turn_models ?? []);
