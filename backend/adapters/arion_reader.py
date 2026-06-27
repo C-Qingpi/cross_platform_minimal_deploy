@@ -237,7 +237,7 @@ class ArionReader:
 
     # ── Checkpoint pruning ──────────────────────────────────────
 
-    def prune_checkpoints(self, thread_id: str, *, keep: int = 250) -> int:
+    def prune_checkpoints(self, thread_id: str, *, keep: int = 350) -> int:
         """Remove old checkpoints for a thread, keeping the most recent `keep`.
 
         Uses raw SQL for speed (no langgraph deserialization needed).
@@ -291,7 +291,7 @@ class ArionReader:
         finally:
             conn.close()
 
-    def prune_all_threads(self, *, keep: int = 250) -> dict[str, int]:
+    def prune_all_threads(self, *, keep: int = 350) -> dict[str, int]:
         """Prune all threads in this agent's checkpoint DB.
 
         Returns {thread_id: removed_count}.

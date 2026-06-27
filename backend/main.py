@@ -95,7 +95,7 @@ _dispatcher_task: asyncio.Task | None = None
 
 
 async def _checkpoint_pruner(interval: float = 60.0) -> None:
-    """Background task: prune old checkpoints, keeping at most 25 per thread."""
+    """Background task: prune old checkpoints, keeping at most 350 per thread."""
     while True:
         try:
             for entry in registry.list_agents():
