@@ -8,6 +8,7 @@ import contextlib
 import json
 import logging
 import os
+import sqlite3
 import sys
 from collections import defaultdict, deque
 from contextvars import ContextVar
@@ -351,6 +352,68 @@ def _ack_cancel(
 ) -> None:
     events.task_cancelled(agent_id, thread_id, model, msg_id)
     runtime.cancel_event.clear()
+    _try_write_cancel_transcript(agent_id, thread_id)
+
+
+def _try_write_cancel_transcript(agent_id: str, thread_id: str) -> None:
+    """Force-write a conversation transcript for a cancelled turn.
+
+    When a turn is cancelled before LangGraph's compression runs,
+    messages survive only in the SQLite checkpoint — the human-readable
+    conversation_history/ transcript is never created.  This leaves
+    branched threads invisible in the frontend (no .md files).
+
+    We read the latest checkpoint and, if the thread has no existing
+    transcript, write one synchronously.
+    """
+    info = registry.get_agent(agent_id)
+    if not info:
+        return
+    workspace = Path(info["workspace"])
+    identity_dir = workspace / ".arion" / "agents" / agent_id
+    conv_dir = identity_dir / "conversation_history" / thread_id
+    checkpoint_path = identity_dir / "checkpoints.sqlite"
+
+    if not checkpoint_path.exists():
+        return
+
+    # Skip if transcripts already exist for this thread
+    if conv_dir.is_dir() and any(
+        p.name != "_human_prompts.md"
+        for p in conv_dir.iterdir()
+        if p.suffix == ".md"
+    ):
+        return
+
+    try:
+        from langgraph.checkpoint.sqlite import SqliteSaver
+        conn = sqlite3.connect(str(checkpoint_path))
+        saver = SqliteSaver(conn)
+        cp_tuple = saver.get_tuple({"configurable": {"thread_id": thread_id}})
+        conn.close()
+        if not cp_tuple:
+            return
+        messages = list(
+            cp_tuple.checkpoint.get("channel_values", {}).get("messages", [])
+        )
+        if not messages:
+            return
+
+        from arion_agent.summarization.compress import write_transcript
+        write_transcript(
+            messages, thread_id,
+            history_dir=identity_dir,
+            workspace_dir=workspace,
+        )
+        logger.info(
+            "Wrote cancel transcript agent=%s thread=%s (%d messages)",
+            agent_id, thread_id, len(messages),
+        )
+    except Exception:
+        logger.debug(
+            "Failed to write cancel transcript for %s/%s",
+            agent_id, thread_id, exc_info=True,
+        )
 
 
 async def _run_turn(
@@ -415,6 +478,19 @@ async def _run_turn(
             _clear_thread_stream_draft(agent_id, thread_id)
         else:
             invoke_task.cancel()
+            # Give the abort-aware model_node up to 3 s to notice the
+            # cancellation and raise AgentAborted, rather than immediately
+            # creating a zombie that keeps the LLM call running.
+            try:
+                await asyncio.wait_for(invoke_task, timeout=3.0)
+                try:
+                    invoke_task.result()
+                except AgentAborted:
+                    logger.info("Turn aborted agent=%s thread=%s", agent_id, thread_id)
+                    _ack_cancel(agent_id, thread_id, model, msg_id, runtime)
+                    return
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
             runtime.zombie_task = invoke_task
             logger.info("Turn cancel requested agent=%s thread=%s", agent_id, thread_id)
             _ack_cancel(agent_id, thread_id, model, msg_id, runtime)

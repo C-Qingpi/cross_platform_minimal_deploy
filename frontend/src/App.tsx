@@ -85,27 +85,48 @@ function AppContent() {
   const threadStatus = agentState?.threads?.[activeThreadId]?.status;
   const { toast, showToast } = useEventToasts(activeAgentId, activeThreadId, agentState);
 
-  // ── Job-done audio ding (5 consecutive high-pitch beeps) ──────────
+  // ── Cross-agent job-done chime + toast ────────────────────
   const audioCtxRef = useRef<AudioContext | null>(null);
-  const prevActiveIdsRef = useRef(new Set<string>());
+  // Map: agentId → Set of threadIds that were active/summarizing last poll
+  const prevAllActiveRef = useRef(new Map<string, Set<string>>());
   useEffect(() => {
-    const threads = agentState?.threads ?? {};
-    const nowActive = new Set(Object.keys(threads).filter((tid) => threads[tid]?.active));
-    const prev = prevActiveIdsRef.current;
+    let cancelled = false;
 
-    // Detect any thread that was active last poll but is now inactive
-    let justFinished = false;
-    for (const tid of prev) {
-      if (!nowActive.has(tid)) {
-        justFinished = true;
-        break;
+    const poll = async () => {
+      let allAgents: { agent_id: string; state: { threads?: Record<string, { active: boolean; status: string }> } }[];
+      try {
+        allAgents = await api.fetchAgents();
+      } catch {
+        return;
       }
-    }
+      if (cancelled) return;
 
-    prevActiveIdsRef.current = nowActive;
+      // Build current active set: agentId → Set<threadId>
+      const nowActive = new Map<string, Set<string>>();
+      for (const a of allAgents) {
+        const threads = a.state?.threads ?? {};
+        const active = new Set<string>();
+        for (const [tid, t] of Object.entries(threads)) {
+          if (t.active) active.add(tid);
+        }
+        if (active.size > 0) nowActive.set(a.agent_id, active);
+      }
 
-    if (justFinished && prev.size > 0) {
-      (async () => {
+      const prev = prevAllActiveRef.current;
+      // Detect completions: threads that were active last poll but are not now
+      const justFinished: { agentId: string; threadId: string }[] = [];
+      for (const [agentId, prevIds] of prev.entries()) {
+        const nowIds = nowActive.get(agentId);
+        for (const tid of prevIds) {
+          if (!nowIds?.has(tid)) {
+            justFinished.push({ agentId, threadId: tid });
+          }
+        }
+      }
+
+      // Don't fire on first poll (no previous state to compare)
+      if (prev.size > 0 && justFinished.length > 0) {
+        // Chime
         try {
           let ctx = audioCtxRef.current;
           if (!ctx || ctx.state === "closed") {
@@ -115,17 +136,16 @@ function AppContent() {
           if (ctx.state === "suspended") {
             await ctx.resume();
           }
-          // Blues charm — ascending C blues scale lick with overlapping notes
           const notes = [
-            { freq: 523, start: 0.00 },  // C5
-            { freq: 622, start: 0.13 },  // Eb5 ♭3
-            { freq: 698, start: 0.26 },  // F5
-            { freq: 740, start: 0.38 },  // Gb5 ♭5 — blue note
-            { freq: 784, start: 0.50 },  // G5
-            { freq: 1047, start: 0.63 }, // C6
+            { freq: 523, start: 0.00 },
+            { freq: 622, start: 0.13 },
+            { freq: 698, start: 0.26 },
+            { freq: 740, start: 0.38 },
+            { freq: 784, start: 0.50 },
+            { freq: 1047, start: 0.63 },
           ];
           const vol = 0.25;
-          const ring = 0.35; // each note rings ~350ms (overlaps next)
+          const ring = 0.35;
           for (const n of notes) {
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
@@ -139,12 +159,27 @@ function AppContent() {
             gain.gain.setValueAtTime(vol, t);
             gain.gain.exponentialRampToValueAtTime(0.001, t + ring);
           }
-      } catch {
-        // AudioContext may not be available (e.g., no user gesture yet)
+        } catch {
+          // AudioContext may not be available
+        }
+
+        // Toast each completed thread
+        for (const { agentId, threadId } of justFinished) {
+          showToast(`${agentId}/${threadId} — task completed`, 4000);
+        }
       }
-      })();
-    }
-  }, [agentState]);
+
+      if (!cancelled) prevAllActiveRef.current = nowActive;
+
+      // Determine poll interval: 200ms if any thread active, otherwise 1s
+      const delay = nowActive.size > 0 ? 200 : 1000;
+      if (!cancelled) window.setTimeout(poll, delay);
+    };
+
+    poll();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const rounds = useMemo(
     () => attachTurnModels(groupIntoRounds(messages), turnModels),
