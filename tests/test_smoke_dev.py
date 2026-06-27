@@ -61,8 +61,9 @@ class TestDevSearchMiddleware:
         ar = _import_agent_runner()
 
         middleware = ar._optional_middleware(ws)
-        assert len(middleware) == 1
-        assert middleware[0].tools[0].name == "semantic_search"
+        assert len(middleware) >= 1
+        tool_names = {t.name for m in middleware for t in m.tools}
+        assert "semantic_search" in tool_names
 
     def test_prod_enables_semantic_search_tool(self, monkeypatch: pytest.MonkeyPatch) -> None:
         pytest.importorskip("fastembed")
@@ -71,8 +72,9 @@ class TestDevSearchMiddleware:
         ar = _import_agent_runner()
 
         middleware = ar._optional_middleware(ws)
-        assert len(middleware) == 1
-        assert middleware[0].tools[0].name == "semantic_search"
+        assert len(middleware) >= 1
+        tool_names = {t.name for m in middleware for t in m.tools}
+        assert "semantic_search" in tool_names
 
 
 class TestInterruptResume:

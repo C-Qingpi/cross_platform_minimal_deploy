@@ -170,12 +170,24 @@ def _is_dev_deploy() -> bool:
 def _optional_middleware(workspace: Path) -> list:
     if not _is_dev_deploy():
         return []
+
+    middleware: list = []
+
     from arion_agent.environments.search import SearchEnvironment, is_search_available
 
-    if not is_search_available():
+    if is_search_available():
+        middleware.append(SearchEnvironment(workspace_dir=str(workspace)))
+    else:
         logger.warning("Dev deploy: search extras not installed; skip SearchEnvironment")
-        return []
-    return [SearchEnvironment(workspace_dir=str(workspace))]
+
+    from arion_agent.environments.browser import BrowserEnvironment, is_browser_available
+
+    if is_browser_available():
+        middleware.append(BrowserEnvironment(workspace_dir=str(workspace)))
+    else:
+        logger.warning("Dev deploy: browser/playwright not installed; skip BrowserEnvironment")
+
+    return middleware
 
 
 def _warm_dev_search_indexers() -> None:
