@@ -24,6 +24,8 @@ WORKFLOW_METHODOLOGY = """\
 <workflow>
 WORKFLOW: GATHER → REVIEW → DO → TEST → FIX → CLEANUP → DELIVER.
 
+- RECONCILE: Check prior user prompts for unfinished work before starting the new
+  request. Only skip when the user explicitly says "focus on the new task" or similar.
 - GATHER: Read all relevant files before editing. Context windows evict — re-read before acting.
   Start broad, then narrow: use semantic search to grasp context and locate relevant areas,
   then list files to orient, then use targeted grep/glob for precise information.
