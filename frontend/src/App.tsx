@@ -162,16 +162,17 @@ function AppContent() {
 
       // Don't fire on first poll (no previous state to compare)
       if (prev.size > 0 && justFinished.length > 0) {
-        // Chime
+        // Chime (only if AudioContext was primed by user gesture)
         try {
-          let ctx = audioCtxRef.current;
+          const ctx = audioCtxRef.current;
           if (!ctx || ctx.state === "closed") {
-            ctx = new AudioContext();
-            audioCtxRef.current = ctx;
-          }
-          if (ctx.state === "suspended") {
+            // AudioContext not primed by user gesture yet — skip chime.
+            // Chrome autoplay policy requires AudioContext creation/resume
+            // in a user-gesture callback; our prime useEffect handles that.
+          } else if (ctx.state === "suspended") {
             await ctx.resume();
           }
+          if (ctx && ctx.state === "running") {
           const notes = [
             { freq: 523, start: 0.00 },
             { freq: 622, start: 0.13 },
@@ -194,6 +195,7 @@ function AppContent() {
             osc.stop(t + ring);
             gain.gain.setValueAtTime(vol, t);
             gain.gain.exponentialRampToValueAtTime(0.001, t + ring);
+          }
           }
         } catch {
           // AudioContext may not be available
