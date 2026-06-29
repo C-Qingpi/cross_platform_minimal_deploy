@@ -13,11 +13,26 @@ from pathlib import Path
 _LOG_FORMAT = "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
 
 
+class _SuppressUvicornAccess(logging.Filter):
+    """Suppress uvicorn.access logs from console (they still go to file handlers)."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.name != "uvicorn.access"
+
+
+class _OnlyUvicornAccess(logging.Filter):
+    """Allow only uvicorn.access logs through (for dedicated HTTP access log)."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.name == "uvicorn.access"
+
+
 def setup_service_logging(service: str, deploy_root: Path, *, level: int = logging.INFO) -> Path:
     log_dir = deploy_root / ".run" / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     main_log = log_dir / f"{service}.log"
     err_log = log_dir / f"{service}.err.log"
+    http_log = log_dir / f"{service}.http.log"
 
     formatter = logging.Formatter(_LOG_FORMAT)
     root = logging.getLogger()
@@ -33,8 +48,15 @@ def setup_service_logging(service: str, deploy_root: Path, *, level: int = loggi
     err_handler.setFormatter(formatter)
     root.addHandler(err_handler)
 
+    # HTTP access log to its own file (reduces console noise)
+    http_handler = logging.FileHandler(http_log, encoding="utf-8")
+    http_handler.setFormatter(formatter)
+    http_handler.addFilter(_OnlyUvicornAccess())
+    root.addHandler(http_handler)
+
     console = logging.StreamHandler(sys.stderr)
     console.setFormatter(formatter)
+    console.addFilter(_SuppressUvicornAccess())
     root.addHandler(console)
 
     crash_log = log_dir / "faulthandler.log"
